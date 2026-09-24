@@ -1,9 +1,9 @@
-import { Chess, Square, PieceSymbol, Color, Move } from 'chess.js';
-import { BotProfile, AnalyzedMove, MoveClassification } from '../types/chess';
-import { detectOpening } from './openings';
+import { Chess, Move } from 'chess.js';
+import { BotProfile, MoveClassification, AnalyzedGame, AnalyzedMove, PieceType } from '../types/chess';
+import { stockfish } from './stockfishWorker';
 
-// Piece values in centipawns
-const PIECE_VALUES: Record<PieceSymbol, number> = {
+// Standard piece valuation
+const PIECE_VALUES: Record<string, number> = {
   p: 100,
   n: 320,
   b: 330,
@@ -12,19 +12,19 @@ const PIECE_VALUES: Record<PieceSymbol, number> = {
   k: 20000,
 };
 
-// Piece-Square Tables (Midgame)
-const PAWN_PST = [
+// Positional bonuses (Piece-Square Tables simplified)
+const PAWN_TABLE = [
   0,  0,  0,  0,  0,  0,  0,  0,
   50, 50, 50, 50, 50, 50, 50, 50,
   10, 10, 20, 30, 30, 20, 10, 10,
-   5,  5, 10, 25, 25, 10,  5,  5,
-   0,  0,  0, 20, 20,  0,  0,  0,
-   5, -5,-10,  0,  0,-10, -5,  5,
-   5, 10, 10,-20,-20, 10, 10,  5,
-   0,  0,  0,  0,  0,  0,  0,  0
+  5,  5, 10, 25, 25, 10,  5,  5,
+  0,  0,  0, 20, 20,  0,  0,  0,
+  5, -5,-10,  0,  0,-10, -5,  5,
+  5, 10, 10,-20,-20, 10, 10,  5,
+  0,  0,  0,  0,  0,  0,  0,  0
 ];
 
-const KNIGHT_PST = [
+const KNIGHT_TABLE = [
   -50,-40,-30,-30,-30,-30,-40,-50,
   -40,-20,  0,  0,  0,  0,-20,-40,
   -30,  0, 10, 15, 15, 10,  0,-30,
@@ -35,7 +35,7 @@ const KNIGHT_PST = [
   -50,-40,-30,-30,-30,-30,-40,-50,
 ];
 
-const BISHOP_PST = [
+const BISHOP_TABLE = [
   -20,-10,-10,-10,-10,-10,-10,-20,
   -10,  0,  0,  0,  0,  0,  0,-10,
   -10,  0,  5, 10, 10,  5,  0,-10,
@@ -46,96 +46,55 @@ const BISHOP_PST = [
   -20,-10,-10,-10,-10,-10,-10,-20,
 ];
 
-const ROOK_PST = [
-    0,  0,  0,  0,  0,  0,  0,  0,
-    5, 10, 10, 10, 10, 10, 10,  5,
-   -5,  0,  0,  0,  0,  0,  0, -5,
-   -5,  0,  0,  0,  0,  0,  0, -5,
-   -5,  0,  0,  0,  0,  0,  0, -5,
-   -5,  0,  0,  0,  0,  0,  0, -5,
-   -5,  0,  0,  0,  0,  0,  0, -5,
-    0,  0,  0,  5,  5,  0,  0,  0
-];
-
-const QUEEN_PST = [
-  -20,-10,-10, -5, -5,-10,-10,-20,
-  -10,  0,  0,  0,  0,  0,  0,-10,
-  -10,  0,  5,  5,  5,  5,  0,-10,
-   -5,  0,  5,  5,  5,  5,  0, -5,
-    0,  0,  5,  5,  5,  5,  0, -5,
-  -10,  5,  5,  5,  5,  5,  0,-10,
-  -10,  0,  5,  0,  0,  0,  0,-10,
-  -20,-10,-10, -5, -5,-10,-10,-20
-];
-
-const KING_MIDGAME_PST = [
-  -30,-40,-40,-50,-50,-40,-40,-30,
-  -30,-40,-40,-50,-50,-40,-40,-30,
-  -30,-40,-40,-50,-50,-40,-40,-30,
-  -30,-40,-40,-50,-50,-40,-40,-30,
-  -20,-30,-30,-40,-40,-30,-30,-20,
-  -10,-20,-20,-20,-20,-20,-20,-10,
-   20, 20,  0,  0,  0,  0, 20, 20,
-   20, 30, 10,  0,  0, 10, 30, 20
-];
-
+/**
+ * Fast static evaluation in centipawns
+ * Positive = White advantage, Negative = Black advantage
+ */
 export function evaluateBoard(chess: Chess): number {
   if (chess.isCheckmate()) {
     return chess.turn() === 'w' ? -20000 : 20000;
   }
-  if (chess.isDraw() || chess.isStalemate() || chess.isThreefoldRepetition() || chess.isInsufficientMaterial()) {
+  if (chess.isDraw()) {
     return 0;
   }
 
+  let evaluation = 0;
   const board = chess.board();
-  let score = 0;
 
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       const piece = board[r][c];
       if (!piece) continue;
 
-      const pieceVal = PIECE_VALUES[piece.type];
-      const sqIdx = r * 8 + c;
-      const flippedIdx = (7 - r) * 8 + c;
+      const baseVal = PIECE_VALUES[piece.type] || 0;
+      let posVal = 0;
+      const squareIdx = piece.color === 'w' ? r * 8 + c : (7 - r) * 8 + c;
 
-      let positionalScore = 0;
-      if (piece.type === 'p') {
-        positionalScore = piece.color === 'w' ? PAWN_PST[sqIdx] : PAWN_PST[flippedIdx];
-      } else if (piece.type === 'n') {
-        positionalScore = piece.color === 'w' ? KNIGHT_PST[sqIdx] : KNIGHT_PST[flippedIdx];
-      } else if (piece.type === 'b') {
-        positionalScore = piece.color === 'w' ? BISHOP_PST[sqIdx] : BISHOP_PST[flippedIdx];
-      } else if (piece.type === 'r') {
-        positionalScore = piece.color === 'w' ? ROOK_PST[sqIdx] : ROOK_PST[flippedIdx];
-      } else if (piece.type === 'q') {
-        positionalScore = piece.color === 'w' ? QUEEN_PST[sqIdx] : QUEEN_PST[flippedIdx];
-      } else if (piece.type === 'k') {
-        positionalScore = piece.color === 'w' ? KING_MIDGAME_PST[sqIdx] : KING_MIDGAME_PST[flippedIdx];
-      }
+      if (piece.type === 'p') posVal = PAWN_TABLE[squareIdx];
+      else if (piece.type === 'n') posVal = KNIGHT_TABLE[squareIdx];
+      else if (piece.type === 'b') posVal = BISHOP_TABLE[squareIdx];
 
-      const totalPieceVal = pieceVal + positionalScore;
+      const pieceTotal = baseVal + posVal;
       if (piece.color === 'w') {
-        score += totalPieceVal;
+        evaluation += pieceTotal;
       } else {
-        score -= totalPieceVal;
+        evaluation -= pieceTotal;
       }
     }
   }
 
-  // Factor in mobility (number of legal moves)
+  // Mobility bonus (number of legal moves)
   const mobility = chess.moves().length;
-  if (chess.turn() === 'w') {
-    score += mobility * 5;
-  } else {
-    score -= mobility * 5;
-  }
+  evaluation += (chess.turn() === 'w' ? 1 : -1) * mobility * 5;
 
-  return score; // Positive is white advantage in centipawns
+  return evaluation;
 }
 
-function quiescence(chess: Chess, alpha: number, beta: number, depth: number = 0): number {
-  const standPat = evaluateBoard(chess) * (chess.turn() === 'w' ? 1 : -1);
+/**
+ * Quiescence search to avoid the horizon effect
+ */
+function quiescence(chess: Chess, alpha: number, beta: number, depth: number): number {
+  const standPat = (chess.turn() === 'w' ? 1 : -1) * evaluateBoard(chess);
   if (depth > 4) return standPat;
 
   if (standPat >= beta) return beta;
@@ -143,7 +102,11 @@ function quiescence(chess: Chess, alpha: number, beta: number, depth: number = 0
 
   const captureMoves = chess.moves({ verbose: true }).filter(m => m.captured);
   for (const move of captureMoves) {
-    chess.move(move);
+    try {
+      chess.move(move);
+    } catch {
+      continue;
+    }
     const score = -quiescence(chess, -beta, -alpha, depth + 1);
     chess.undo();
 
@@ -181,7 +144,11 @@ export function minimax(
   if (isMaximizing) {
     let maxEval = -Infinity;
     for (const move of moves) {
-      chess.move(move);
+      try {
+        chess.move(move);
+      } catch {
+        continue;
+      }
       const evalResult = minimax(chess, depth - 1, alpha, beta, false);
       chess.undo();
 
@@ -196,7 +163,11 @@ export function minimax(
   } else {
     let minEval = Infinity;
     for (const move of moves) {
-      chess.move(move);
+      try {
+        chess.move(move);
+      } catch {
+        continue;
+      }
       const evalResult = minimax(chess, depth - 1, alpha, beta, true);
       chess.undo();
 
@@ -212,33 +183,67 @@ export function minimax(
 }
 
 /**
- * Calculates the best move for a bot based on personality and Elo settings
+ * Calculates bot move based on persona profile and depth
  */
 export function getBotMove(chess: Chess, bot: BotProfile): Move | null {
   const legalMoves = chess.moves({ verbose: true });
   if (legalMoves.length === 0) return null;
 
-  // Bot personality quirks:
-  // Nelson: Loves queen moves and early aggressive checks
-  if (bot.personality === 'queen_rush' && Math.random() < 0.6) {
-    const queenMoves = legalMoves.filter(m => m.piece === 'q');
-    if (queenMoves.length > 0) {
-      return queenMoves[Math.floor(Math.random() * queenMoves.length)];
-    }
+  // Intentional inaccuracy / blunder rate based on Elo
+  const shouldBlunder = Math.random() < bot.blunderRate;
+  if (shouldBlunder && legalMoves.length > 1) {
+    // Pick random move among legal moves
+    return legalMoves[Math.floor(Math.random() * legalMoves.length)];
   }
 
-  // Blunder rate check
-  if (Math.random() < bot.blunderRate) {
-    // Pick a random legal move or capture
-    const nonBestMoves = legalMoves.length > 1 ? legalMoves : legalMoves;
-    return nonBestMoves[Math.floor(Math.random() * nonBestMoves.length)];
-  }
-
+  // Calculate move using minimax
+  const depth = bot.depth || 2;
   const isWhite = chess.turn() === 'w';
-  const depth = Math.min(bot.depth, 3); // Keep within fast response bounds
   const result = minimax(chess, depth, -Infinity, Infinity, isWhite);
 
   return result.bestMove || legalMoves[0];
+}
+
+/**
+ * Gets real Stockfish move using WebAssembly worker, with graceful fallback
+ * Default 8000ms gives Stockfish 7-10 seconds to analyze and find the best move
+ */
+export async function getStockfishMoveAsync(
+  chess: Chess,
+  bot: BotProfile,
+  moveTimeMs: number = 8000
+): Promise<{ from: string; to: string; promotion?: string }> {
+  try {
+    // Map bot elo (450 to 2800) to Stockfish skill level (0 to 20)
+    const skillLevel = Math.max(0, Math.min(20, Math.round(((bot.elo - 400) / 2400) * 20)));
+    const depth = 26; // deep search limit to allow 7-10s calculation
+
+    const sfMove = await stockfish.getBestMove(chess.fen(), skillLevel, depth, moveTimeMs);
+    if (sfMove && sfMove.from && sfMove.to) {
+      // Validate with chess.js against current game state
+      const test = new Chess(chess.fen());
+      try {
+        const valid = test.move({ from: sfMove.from, to: sfMove.to, promotion: sfMove.promotion });
+        if (valid) {
+          return { from: sfMove.from, to: sfMove.to, promotion: sfMove.promotion };
+        }
+      } catch (err) {
+        console.warn('Stockfish move was invalid on current fen:', sfMove, err);
+      }
+    }
+  } catch (e) {
+    console.warn('Stockfish engine error, fallback to minimax:', e);
+  }
+
+  // Fallback to local minimax bot engine
+  const fallback = getBotMove(chess, bot);
+  if (fallback) {
+    return { from: fallback.from, to: fallback.to, promotion: fallback.promotion };
+  }
+  const legal = chess.moves({ verbose: true });
+  return legal.length > 0
+    ? { from: legal[0].from, to: legal[0].to, promotion: legal[0].promotion }
+    : { from: '', to: '' };
 }
 
 /**
@@ -249,29 +254,32 @@ export function centipawnsToWinProb(cp: number): number {
 }
 
 /**
- * Analyzes an entire game and calculates move classifications and accuracy
+ * Full game analysis algorithm
  */
-export function analyzeGame(historyMoves: { from: string; to: string; promotion?: string }[]): {
-  analyzedMoves: AnalyzedMove[];
-  whiteAccuracy: number;
-  blackAccuracy: number;
-  whiteBlunders: number;
-  blackBlunders: number;
-  whiteBrilliants: number;
-  blackBrilliants: number;
-} {
+export function analyzeMatch(
+  historyMoves: { from: string; to: string; promotion?: string }[],
+  initialPgn?: string
+): AnalyzedGame {
   const sim = new Chess();
-  const analyzed: AnalyzedMove[] = [];
+  if (initialPgn) {
+    try {
+      sim.loadPgn(initialPgn);
+    } catch {}
+  }
 
-  let whiteAccSum = 0;
-  let whiteMoveCount = 0;
-  let blackAccSum = 0;
-  let blackMoveCount = 0;
+  const analyzedMoves: AnalyzedMove[] = [];
+  let whiteAccuracySum = 0;
+  let blackAccuracySum = 0;
+  let whiteMovesCount = 0;
+  let blackMovesCount = 0;
 
-  let whiteBlunders = 0;
-  let blackBlunders = 0;
   let whiteBrilliants = 0;
   let blackBrilliants = 0;
+  let whiteBlunders = 0;
+  let blackBlunders = 0;
+
+  // Reset to start of moves
+  sim.reset();
 
   for (let i = 0; i < historyMoves.length; i++) {
     const m = historyMoves[i];
@@ -282,8 +290,13 @@ export function analyzeGame(historyMoves: { from: string; to: string; promotion?
     const bestMoveResult = minimax(sim, 2, -Infinity, Infinity, turn === 'w');
     const bestMoveSan = bestMoveResult.bestMove?.san || '';
 
-    // Execute player move
-    const moveResult = sim.move(m);
+    // Execute player move safely
+    let moveResult: Move | null = null;
+    try {
+      moveResult = sim.move(m);
+    } catch {
+      break;
+    }
     if (!moveResult) break;
 
     const evalAfter = evaluateBoard(sim);
@@ -305,61 +318,59 @@ export function analyzeGame(historyMoves: { from: string; to: string; promotion?
       classification = 'best';
       commentary = 'The best engine move in the position.';
     } else if (evalDelta >= -20) {
-      classification = 'excellent';
-      commentary = 'A strong, accurate move maintaining positional balance.';
-    } else if (evalDelta >= -60) {
       classification = 'good';
-      commentary = 'A solid practical choice.';
-    } else if (evalDelta >= -150) {
+      commentary = 'A solid, active move maintaining the position.';
+    } else if (evalDelta >= -80) {
       classification = 'inaccuracy';
-      commentary = `Slight inaccuracy. ${bestMoveSan ? `Consider ${bestMoveSan} instead.` : ''}`;
-    } else if (evalDelta >= -300) {
+      commentary = `Slight inaccuracy. Better was ${bestMoveSan}.`;
+    } else if (evalDelta >= -200) {
       classification = 'mistake';
-      commentary = `A notable mistake losing tactical initiative. Best was ${bestMoveSan}.`;
+      commentary = `Mistake that conceded the initiative. Recommended: ${bestMoveSan}.`;
     } else {
       classification = 'blunder';
-      commentary = `A critical blunder that swings the evaluation! Better was ${bestMoveSan}.`;
+      commentary = `Severe blunder! Overlooked tactical reply. Best was ${bestMoveSan}.`;
       if (turn === 'w') whiteBlunders++; else blackBlunders++;
     }
 
-    // Accuracy formula: 100 * exp(-0.003 * |loss in CP|)
-    const cpLoss = Math.max(0, -evalDelta);
-    const accuracyForMove = Math.min(100, Math.max(0, 100 * Math.exp(-0.0025 * cpLoss)));
-
+    // Move accuracy calculation
+    const moveAcc = Math.max(0, Math.min(100, 100 + evalDelta / 2));
     if (turn === 'w') {
-      whiteAccSum += accuracyForMove;
-      whiteMoveCount++;
+      whiteAccuracySum += moveAcc;
+      whiteMovesCount++;
     } else {
-      blackAccSum += accuracyForMove;
-      blackMoveCount++;
+      blackAccuracySum += moveAcc;
+      blackMovesCount++;
     }
 
-    analyzed.push({
+    analyzedMoves.push({
       san: moveResult.san,
       from: moveResult.from,
       to: moveResult.to,
-      piece: moveResult.piece as any,
-      color: moveResult.color as any,
-      captured: moveResult.captured as any,
-      promotion: moveResult.promotion as any,
+      piece: moveResult.piece as PieceType,
+      color: moveResult.color as 'w' | 'b',
+      captured: moveResult.captured as PieceType | undefined,
+      promotion: moveResult.promotion as PieceType | undefined,
       fen: sim.fen(),
-      eval: evalAfter / 100, // in pawns e.g. +1.4
+      eval: +(evalAfter / 100).toFixed(2),
       bestMoveSan,
       classification,
       commentary,
     });
   }
 
-  const whiteAccuracy = whiteMoveCount > 0 ? +(whiteAccSum / whiteMoveCount).toFixed(1) : 100;
-  const blackAccuracy = blackMoveCount > 0 ? +(blackAccSum / blackMoveCount).toFixed(1) : 100;
+  const whiteAccuracy = whiteMovesCount > 0 ? +(whiteAccuracySum / whiteMovesCount).toFixed(1) : 85.0;
+  const blackAccuracy = blackMovesCount > 0 ? +(blackAccuracySum / blackMovesCount).toFixed(1) : 85.0;
 
   return {
-    analyzedMoves: analyzed,
     whiteAccuracy,
     blackAccuracy,
+    analyzedMoves,
+    whiteBrilliants,
+    blackBrilliants,
     whiteBlunders,
     blackBlunders,
-    whiteBrilliants,
-    blackBrilliants
   };
 }
+
+export const analyzeGame = analyzeMatch;
+

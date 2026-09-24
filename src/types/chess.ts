@@ -47,6 +47,16 @@ export interface AnalyzedMove {
   timeSpentSeconds?: number;
 }
 
+export interface AnalyzedGame {
+  whiteAccuracy: number;
+  blackAccuracy: number;
+  analyzedMoves: AnalyzedMove[];
+  whiteBrilliants: number;
+  blackBrilliants: number;
+  whiteBlunders: number;
+  blackBlunders: number;
+}
+
 export interface BotProfile {
   id: string;
   name: string;

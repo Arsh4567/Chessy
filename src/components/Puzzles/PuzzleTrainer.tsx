@@ -42,8 +42,15 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
   const handlePlayerMove = (moveObj: { from: string; to: string; promotion?: string }): boolean => {
     if (status !== 'playing') return false;
 
+    let moveResult: any = null;
     const testChess = new Chess(chess.fen());
-    const moveResult = testChess.move(moveObj);
+    try {
+      moveResult = testChess.move(moveObj);
+    } catch {
+      sound.playIllegal();
+      return false;
+    }
+
     if (!moveResult) {
       sound.playIllegal();
       return false;
@@ -76,13 +83,17 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
       } else {
         // Automatic opponent counter-move
         setTimeout(() => {
-          const opponentSan = currentPuzzle.moves[nextStep];
-          const oppMoveResult = testChess.move(opponentSan);
-          if (oppMoveResult) {
-            sound.playMove();
-            setChess(new Chess(testChess.fen()));
-            setLastMove({ from: oppMoveResult.from, to: oppMoveResult.to });
-            setMoveStep(nextStep + 1);
+          try {
+            const opponentSan = currentPuzzle.moves[nextStep];
+            const oppMoveResult = testChess.move(opponentSan);
+            if (oppMoveResult) {
+              sound.playMove();
+              setChess(new Chess(testChess.fen()));
+              setLastMove({ from: oppMoveResult.from, to: oppMoveResult.to });
+              setMoveStep(nextStep + 1);
+            }
+          } catch (e) {
+            console.warn('Opponent counter-move error in puzzle:', e);
           }
         }, 500);
       }
