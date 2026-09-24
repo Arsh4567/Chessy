@@ -1,0 +1,6 @@
+{
+  "name": "Grandmaster Studio - Online Chess, Stockfish Analysis & Tournaments",
+  "description": "Play online, offline, or against adaptive AI bots. Full Stockfish engine game analysis, Elo tracking dashboard, real-time match chat, club tournaments, and social feed.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

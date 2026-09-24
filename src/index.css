@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Cinzel', serif;
+    --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    font-family: var(--font-body);
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono, .tabular-nums {
+    font-family: var(--font-mono);
+  }
+}
+
+/* Custom Chess Board Patterns & Colors */
+.board-theme-emerald {
+  --sq-light: #eeeed2;
+  --sq-dark: #769656;
+  --sq-highlight: #baca44;
+  --sq-move: rgba(20, 85, 30, 0.5);
+  --sq-check: rgba(220, 38, 38, 0.7);
+}
+
+.board-theme-wood {
+  --sq-light: #f0d9b5;
+  --sq-dark: #b58863;
+  --sq-highlight: #ced26b;
+  --sq-move: rgba(181, 136, 99, 0.6);
+  --sq-check: rgba(239, 68, 68, 0.75);
+}
+
+.board-theme-midnight {
+  --sq-light: #e2e8f0;
+  --sq-dark: #334155;
+  --sq-highlight: #38bdf8;
+  --sq-move: rgba(56, 189, 248, 0.4);
+  --sq-check: rgba(244, 63, 94, 0.8);
+}
+
+.board-theme-cyber {
+  --sq-light: #1e293b;
+  --sq-dark: #0f172a;
+  --sq-highlight: #10b981;
+  --sq-move: rgba(16, 185, 129, 0.4);
+  --sq-check: rgba(239, 68, 68, 0.8);
+}
+
+.board-theme-marble {
+  --sq-light: #f8fafc;
+  --sq-dark: #94a3b8;
+  --sq-highlight: #fbbf24;
+  --sq-move: rgba(251, 191, 36, 0.5);
+  --sq-check: rgba(225, 29, 72, 0.75);
+}
+
+/* Custom smooth scroll and transitions */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}
