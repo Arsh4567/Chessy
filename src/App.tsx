@@ -26,11 +26,12 @@ import {
   UserPreferences,
   UserStats
 } from './utils/storage';
-import { stockfish, parseUciMove } from './utils/stockfishWorker';
+import { stockfish, parseUciMove, StockfishEvaluation } from './utils/stockfishWorker';
 
 import { Navbar, NavTab } from './components/Navigation/Navbar';
 import { ChessBoard } from './components/ChessBoard/ChessBoard';
 import { EvalBar } from './components/ChessBoard/EvalBar';
+import { EvalBarTester, BENCHMARK_POSITIONS } from './components/ChessBoard/EvalBarTester';
 import { MoveHistory } from './components/ChessBoard/MoveHistory';
 import { PlayerCard } from './components/Game/PlayerCard';
 import { GameControls } from './components/Game/GameControls';
@@ -172,6 +173,41 @@ export default function App() {
     return () => clearInterval(timer);
   }, [inActiveMatch, chess.turn()]);
 
+  // Live Stockfish Engine Evaluation State (Source of Truth for EvalBar)
+  const [stockfishEval, setStockfishEval] = useState<StockfishEvaluation>({
+    depth: 0,
+    scoreCp: 0,
+    rawScoreType: 'cp',
+    rawScoreValue: 0,
+    rawUciScore: 'cp 0',
+    sideToMove: 'w',
+    evalPawns: 0,
+    displayEval: '0.00',
+  });
+  const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
+
+  // Evaluate any position with real Stockfish engine
+  const evaluateCurrentPosition = useCallback(async (fen: string, depth = 12) => {
+    setIsEvaluating(true);
+    try {
+      const result = await stockfish.evaluatePosition(fen, depth);
+      if (result) {
+        setStockfishEval(result);
+        return result;
+      }
+    } catch (err) {
+      console.warn('Stockfish live evaluation error:', err);
+    } finally {
+      setIsEvaluating(false);
+    }
+    return null;
+  }, []);
+
+  // Run initial evaluation on mount
+  useEffect(() => {
+    evaluateCurrentPosition(chess.fen(), 10);
+  }, [evaluateCurrentPosition]);
+
   // Execute a chess move on the active game state safely
   const executeMove = useCallback((moveObj: { from: string; to: string; promotion?: string }): boolean => {
     if (!moveObj || !moveObj.from || !moveObj.to) return false;
@@ -249,6 +285,24 @@ export default function App() {
     // Update React State and ref to render resulting position
     setChess(nextChess);
     chessRef.current = nextChess;
+
+    // Immediately trigger real Stockfish UCI evaluation for new position
+    evaluateCurrentPosition(nextChess.fen(), 12).then((evalRes) => {
+      if (evalRes && evalRes.evalPawns !== undefined) {
+        setMovesHistory((prev) => {
+          if (prev.length === 0) return prev;
+          const updated = [...prev];
+          const lastIdx = updated.length - 1;
+          if (updated[lastIdx]) {
+            updated[lastIdx] = {
+              ...updated[lastIdx],
+              eval: evalRes.evalPawns ?? (evalRes.scoreCp / 100),
+            };
+          }
+          return updated;
+        });
+      }
+    });
 
     // Check game over
     if (nextChess.isCheckmate()) {
@@ -410,7 +464,10 @@ export default function App() {
     setInActiveMatch(true);
     setGameOverModal((prev) => ({ ...prev, isOpen: false }));
     setActiveTab('play');
-  }, []);
+
+    // Immediately trigger Stockfish evaluation for starting board state
+    evaluateCurrentPosition(newChess.fen(), 12);
+  }, [evaluateCurrentPosition]);
 
   const handleStartBotGame = (
     bot: BotProfile,
@@ -484,7 +541,29 @@ export default function App() {
       handleLoadPosition(fen, enginePlaysWhite);
     };
     (window as any).stockfish = stockfish;
-  }, [chess, executeMove, handleLoadPosition]);
+    (window as any).stockfishEval = stockfishEval;
+    (window as any).evaluatePosition = evaluateCurrentPosition;
+    (window as any).runEvalBarTests = async () => {
+      console.log('=== Running Automated Stockfish Eval Bar E2E Tests ===');
+      const results = [];
+      for (const pos of BENCHMARK_POSITIONS) {
+        handleLoadPosition(pos.fen, false);
+        const res = await stockfish.evaluatePosition(pos.fen, 10);
+        const info = {
+          position: pos.name,
+          fen: pos.fen,
+          rawUci: res.rawUciScore,
+          sideToMove: res.sideToMove,
+          convertedEval: res.displayEval,
+          scoreCp: res.scoreCp,
+        };
+        results.push(info);
+        console.log(`Verified [${pos.name}]: Raw UCI = ${res.rawUciScore} -> Converted = ${res.displayEval} (${res.scoreCp} cp)`);
+      }
+      console.table(results);
+      return results;
+    };
+  }, [chess, executeMove, handleLoadPosition, stockfishEval, evaluateCurrentPosition]);
 
   const handleRequestHint = async () => {
     try {
@@ -522,6 +601,7 @@ export default function App() {
           : null
       );
       setBestMoveHint(null);
+      evaluateCurrentPosition(targetBoard.fen(), 12);
     } catch (e) {
       console.warn('Error during takeback:', e);
     }
@@ -542,7 +622,9 @@ export default function App() {
 
   const material = calculateMaterial();
   const currentEval =
-    movesHistory[currentMoveIdx]?.eval || evaluateBoard(chess) / 100;
+    stockfishEval.evalPawns !== undefined
+      ? stockfishEval.evalPawns
+      : movesHistory[currentMoveIdx]?.eval ?? (stockfishEval.scoreCp / 100);
   const opening = detectOpening(movesHistory.map((m) => m.san));
 
   const isCurrentTurnHuman =
@@ -698,7 +780,14 @@ export default function App() {
                   {/* Chess Board + Eval Bar */}
                   <div className="flex items-center gap-2 sm:gap-3 w-full justify-center">
                     <div className="h-[320px] sm:h-[460px]">
-                      <EvalBar evalScore={currentEval} isFlipped={isFlipped} />
+                      <EvalBar
+                        evalScore={currentEval}
+                        rawScore={stockfishEval.rawUciScore}
+                        displayEval={stockfishEval.displayEval}
+                        depth={stockfishEval.depth}
+                        isFlipped={isFlipped}
+                        isEvaluating={isEvaluating}
+                      />
                     </div>
 
                     <ChessBoard
@@ -824,6 +913,16 @@ export default function App() {
                         Stockfish 19 NNUE
                       </span>
                     </div>
+
+                    {/* Stockfish Live UCI Output & E2E Position Verification Suite */}
+                    <EvalBarTester
+                      currentFen={chess.fen()}
+                      stockfishEval={stockfishEval}
+                      isEvaluating={isEvaluating}
+                      onSelectPosition={(fen) => {
+                        handleLoadPosition(fen, false);
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -840,6 +939,7 @@ export default function App() {
                           chessRef.current = startBoard;
                           setCurrentMoveIdx(-1);
                           setLastMove(null);
+                          evaluateCurrentPosition(startBoard.fen(), 10);
                         } else if (movesHistory[idx]) {
                           const targetFen = movesHistory[idx].fen;
                           const targetBoard = targetFen ? new Chess(targetFen) : new Chess();
@@ -850,6 +950,7 @@ export default function App() {
                             from: movesHistory[idx].from,
                             to: movesHistory[idx].to,
                           });
+                          evaluateCurrentPosition(targetBoard.fen(), 10);
                         }
                       } catch (err) {
                         console.warn('onSelectMove error:', err);

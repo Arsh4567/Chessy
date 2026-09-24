@@ -275,8 +275,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
           <div className="flex items-center gap-3 w-full justify-center">
             <div className="h-[340px] sm:h-[480px]">
               <EvalBar
-                evalScore={stockfishEval.scoreCp / 100}
+                evalScore={stockfishEval.evalPawns ?? (stockfishEval.scoreCp / 100)}
+                rawScore={stockfishEval.rawUciScore}
+                displayEval={stockfishEval.displayEval}
+                depth={stockfishEval.depth}
                 isFlipped={isFlipped}
+                isEvaluating={isEngineEvaluating}
               />
             </div>
 
@@ -313,8 +317,13 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                 <Cpu className={`w-4 h-4 ${isEngineEvaluating ? 'text-amber-400 animate-spin' : 'text-emerald-400'}`} />
                 <span className="text-xs font-bold text-slate-200">Stockfish 19 Engine</span>
                 <span className="text-[11px] font-mono text-slate-400">
-                  (Depth {stockfishEval.depth})
+                  (D{stockfishEval.depth})
                 </span>
+                {stockfishEval.rawUciScore && (
+                  <span className="text-[10px] font-mono bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800 text-cyan-300">
+                    UCI: {stockfishEval.rawUciScore}
+                  </span>
+                )}
               </div>
               <span className={`text-sm font-mono font-black px-2.5 py-0.5 rounded-lg ${
                 stockfishEval.scoreCp > 50
@@ -323,7 +332,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                   ? 'bg-rose-500/20 text-rose-400'
                   : 'bg-slate-800 text-slate-300'
               }`}>
-                {displayEval}
+                {stockfishEval.displayEval || displayEval}
               </span>
             </div>
 
