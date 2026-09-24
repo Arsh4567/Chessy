@@ -15,8 +15,6 @@ interface PlayerCardProps {
   materialAdvantage: number;
   isBot?: boolean;
   isThinking?: boolean;
-  thinkingSecondsLeft?: number;
-  thinkingDepth?: number;
 }
 
 export const PlayerCard: React.FC<PlayerCardProps> = ({
@@ -31,8 +29,6 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
   materialAdvantage,
   isBot = false,
   isThinking = false,
-  thinkingSecondsLeft,
-  thinkingDepth,
 }) => {
   const formatTime = (totalSeconds: number) => {
     if (totalSeconds < 0) return '0:00';
@@ -80,10 +76,7 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
               ({elo})
             </span>
             {isThinking && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-cyan-950/80 border border-cyan-500/40 text-[10px] font-mono text-cyan-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                <span>Thinking{thinkingDepth ? ` d${thinkingDepth}` : ''}{thinkingSecondsLeft !== undefined ? ` · ${thinkingSecondsLeft.toFixed(0)}s` : ''}</span>
-              </span>
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
             )}
           </div>
 

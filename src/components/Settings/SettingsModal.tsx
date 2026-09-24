@@ -22,6 +22,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const themes: { id: UserPreferences['boardTheme']; name: string; light: string; dark: string }[] = [
+    { id: 'cobalt', name: 'Cobalt', light: '#C8D7E6', dark: '#1E3650' },
     { id: 'emerald', name: 'Emerald', light: '#ECEED2', dark: '#769656' },
     { id: 'wood', name: 'Walnut', light: '#F0D9B5', dark: '#B58863' },
     { id: 'midnight', name: 'Midnight', light: '#334155', dark: '#0F172A' },
@@ -35,8 +36,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Header */}
         <div className="p-5 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <Sliders className="w-5 h-5 text-amber-400" />
-            <h2 className="text-base font-bold text-slate-100">Preferences</h2>
+            <Sliders className="w-5 h-5 text-sky-400" />
+            <h2 className="text-base font-bold text-slate-100">Settings</h2>
           </div>
           <button
             onClick={onClose}
@@ -51,17 +52,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Board Theme */}
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-              <Palette className="w-3.5 h-3.5 text-amber-400" />
-              <span>Board Theme</span>
+              <Palette className="w-3.5 h-3.5 text-sky-400" />
+              <span>Theme</span>
             </div>
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
               {themes.map((t) => (
                 <button
                   key={t.id}
                   onClick={() => update('boardTheme', t.id)}
                   className={`flex flex-col items-center gap-2 p-2 rounded-xl border transition-all cursor-pointer ${
                     preferences.boardTheme === t.id
-                      ? 'border-amber-400 bg-amber-400/10'
+                      ? 'border-sky-400 bg-sky-400/15 shadow-sm shadow-sky-950'
                       : 'border-slate-800 hover:border-slate-700 bg-slate-950/50'
                   }`}
                 >
@@ -77,15 +78,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Stockfish Engine Skill Level */}
+          {/* Stockfish Engine Elo Selection & Auto-Tuning */}
           <div className="space-y-3 bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
-                <Zap className="w-4 h-4 text-emerald-400" />
-                <span>Stockfish 19 Engine Strength</span>
+                <Zap className="w-4 h-4 text-sky-400" />
+                <span>Stockfish</span>
               </div>
-              <span className="text-xs font-mono font-bold text-amber-400">
-                Level {preferences.stockfishLevel} / 20
+              <span className="text-xs font-mono font-bold text-sky-400">
+                {Math.round(400 + (preferences.stockfishLevel / 20) * 2400)} Elo
               </span>
             </div>
             <input
@@ -95,45 +96,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               step="1"
               value={preferences.stockfishLevel}
               onChange={(e) => update('stockfishLevel', parseInt(e.target.value, 10))}
-              className="w-full accent-amber-400 cursor-pointer h-2 bg-slate-800 rounded-lg"
+              className="w-full accent-sky-400 cursor-pointer h-2 bg-slate-800 rounded-lg"
             />
             <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-              <span>Novice (~600)</span>
-              <span>Club (~1500)</span>
-              <span>Master (~2200)</span>
-              <span>Stockfish GM (2800+)</span>
+              <span>400</span>
+              <span>1000</span>
+              <span>1600</span>
+              <span>2200</span>
+              <span>2800</span>
             </div>
-          </div>
-
-          {/* Stockfish Engine Analysis Time (7 - 10s) */}
-          <div className="space-y-3 bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
-                <Clock className="w-4 h-4 text-cyan-400" />
-                <span>Engine Analysis Time</span>
-              </div>
-              <span className="text-xs font-mono font-bold text-cyan-400">
-                {preferences.engineThinkingSeconds || 8} seconds
-              </span>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {[7, 8, 9, 10].map((sec) => (
-                <button
-                  key={sec}
-                  onClick={() => update('engineThinkingSeconds', sec)}
-                  className={`py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
-                    (preferences.engineThinkingSeconds || 8) === sec
-                      ? 'bg-cyan-500 text-slate-950 shadow'
-                      : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  {sec}s
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Gives Stockfish 7–10 seconds to analyze millions of candidate moves and calculate the highest-accuracy grandmaster lines.
-            </p>
           </div>
 
           {/* Toggles */}
@@ -141,52 +112,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <label className="pt-3 flex items-center justify-between cursor-pointer">
               <div className="flex items-center gap-2.5">
                 {preferences.soundEnabled ? <Volume2 className="w-4 h-4 text-sky-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
-                <span className="text-xs font-medium text-slate-200">Sound Effects</span>
+                <span className="text-xs font-medium text-slate-200">Sound</span>
               </div>
               <input
                 type="checkbox"
                 checked={preferences.soundEnabled}
                 onChange={(e) => update('soundEnabled', e.target.checked)}
-                className="w-4 h-4 accent-amber-400 rounded cursor-pointer"
+                className="w-4 h-4 accent-sky-400 rounded cursor-pointer"
               />
             </label>
 
             <label className="pt-3 flex items-center justify-between cursor-pointer">
               <div className="flex items-center gap-2.5">
-                <Eye className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-medium text-slate-200">Board Coordinates</span>
+                <Eye className="w-4 h-4 text-sky-400" />
+                <span className="text-xs font-medium text-slate-200">Coordinates</span>
               </div>
               <input
                 type="checkbox"
                 checked={preferences.showCoordinates}
                 onChange={(e) => update('showCoordinates', e.target.checked)}
-                className="w-4 h-4 accent-amber-400 rounded cursor-pointer"
+                className="w-4 h-4 accent-sky-400 rounded cursor-pointer"
               />
             </label>
 
             <label className="pt-3 flex items-center justify-between cursor-pointer">
               <div className="flex items-center gap-2.5">
                 <span className="text-base">🟢</span>
-                <span className="text-xs font-medium text-slate-200">Legal Move Dots</span>
+                <span className="text-xs font-medium text-slate-200">Legal Moves</span>
               </div>
               <input
                 type="checkbox"
                 checked={preferences.showLegalMoves}
                 onChange={(e) => update('showLegalMoves', e.target.checked)}
-                className="w-4 h-4 accent-amber-400 rounded cursor-pointer"
+                className="w-4 h-4 accent-sky-400 rounded cursor-pointer"
               />
             </label>
 
             <label className="pt-3 flex items-center justify-between cursor-pointer">
               <div className="flex items-center gap-2.5">
                 <span className="text-base">♛</span>
-                <span className="text-xs font-medium text-slate-200">Auto-Promote to Queen</span>
+                <span className="text-xs font-medium text-slate-200">Auto Queen</span>
               </div>
               <input
                 type="checkbox"
                 checked={preferences.autoQueen}
                 onChange={(e) => update('autoQueen', e.target.checked)}
-                className="w-4 h-4 accent-amber-400 rounded cursor-pointer"
+                className="w-4 h-4 accent-sky-400 rounded cursor-pointer"
               />
             </label>
           </div>
@@ -196,9 +167,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="p-4 bg-slate-950/80 border-t border-slate-800 flex justify-end">
           <button
             onClick={onClose}
-            className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+            className="px-5 py-2 bg-linear-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white font-bold text-xs rounded-xl shadow-md shadow-sky-950/50 transition-colors cursor-pointer"
           >
-            Save
+            Done
           </button>
         </div>
       </div>

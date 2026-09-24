@@ -4,7 +4,7 @@
  */
 
 export interface UserPreferences {
-  boardTheme: 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble';
+  boardTheme: 'cobalt' | 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble';
   stockfishLevel: number; // 0 to 20 (0 = beginner ~600, 20 = GM ~2800)
   engineThinkingSeconds: number; // 7 to 10 seconds for deep analysis
   soundEnabled: boolean;
@@ -38,7 +38,7 @@ const PREF_KEY = 'gm_chess_preferences_v2';
 const STATS_KEY = 'gm_chess_user_stats_v2';
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
-  boardTheme: 'emerald',
+  boardTheme: 'cobalt',
   stockfishLevel: 10, // Default balanced level
   engineThinkingSeconds: 8, // 8 seconds default deep analysis (7-10s range)
   soundEnabled: true,

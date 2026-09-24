@@ -10,7 +10,7 @@ interface EvalBarProps {
   isEvaluating?: boolean;
 }
 
-export const EvalBar: React.FC<EvalBarProps> = ({
+export const EvalBar: React.FC<EvalBarProps> = React.memo(({
   evalScore,
   rawScore,
   displayEval: customDisplayEval,
@@ -45,9 +45,7 @@ export const EvalBar: React.FC<EvalBarProps> = ({
   const isTagAtTop = isFlipped ? isWhiteWinning : !isWhiteWinning;
   const isTagOnWhite = isWhiteWinning;
 
-  const tooltipText = `Stockfish Evaluation: ${displayEval} (${cp.toFixed(0)} cp)${
-    rawScore ? `\nRaw UCI Score: ${rawScore}` : ''
-  }${depth ? `\nDepth: ${depth}` : ''}\nWin Probability: ${winProb.toFixed(1)}%`;
+  const tooltipText = `Evaluation: ${displayEval}`;
 
   return (
     <div
@@ -98,4 +96,4 @@ export const EvalBar: React.FC<EvalBarProps> = ({
       </div>
     </div>
   );
-};
+});

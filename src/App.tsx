@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Chess } from 'chess.js';
 import { 
   GameMode, 
@@ -31,7 +31,6 @@ import { stockfish, parseUciMove, StockfishEvaluation } from './utils/stockfishW
 import { Navbar, NavTab } from './components/Navigation/Navbar';
 import { ChessBoard } from './components/ChessBoard/ChessBoard';
 import { EvalBar } from './components/ChessBoard/EvalBar';
-import { EvalBarTester, BENCHMARK_POSITIONS } from './components/ChessBoard/EvalBarTester';
 import { MoveHistory } from './components/ChessBoard/MoveHistory';
 import { PlayerCard } from './components/Game/PlayerCard';
 import { GameControls } from './components/Game/GameControls';
@@ -40,7 +39,9 @@ import { AnalysisView } from './components/Analysis/AnalysisView';
 import { BotSelection } from './components/Bots/BotSelection';
 import { PuzzleTrainer } from './components/Puzzles/PuzzleTrainer';
 import { StatsView } from './components/Stats/StatsView';
+import { PersonalReportView } from './components/Report/PersonalReportView';
 import { SettingsModal } from './components/Settings/SettingsModal';
+import { fetchChessComRecentGames, ChessComGame, ChessComPlayer } from './utils/chessComApi';
 
 import { 
   Play, 
@@ -84,16 +85,6 @@ export default function App() {
   const [whiteTime, setWhiteTime] = useState<number>(180);
   const [blackTime, setBlackTime] = useState<number>(180);
   const [isBotThinking, setIsBotThinking] = useState<boolean>(false);
-  const [botThinkingStats, setBotThinkingStats] = useState<{
-    secondsLeft: number;
-    totalSeconds: number;
-    depth?: number;
-    nodes?: number;
-    scoreCp?: number;
-  }>({
-    secondsLeft: 0,
-    totalSeconds: 8,
-  });
 
   // Moves & Captures
   const [movesHistory, setMovesHistory] = useState<AnalyzedMove[]>([]);
@@ -118,6 +109,28 @@ export default function App() {
     avatar: INITIAL_BOTS[1].avatarIcon,
     isBot: true,
   });
+
+  // Chess.com Public Games & Report State
+  const [chessComGames, setChessComGames] = useState<ChessComGame[]>([]);
+  const [chessComPlayer, setChessComPlayer] = useState<ChessComPlayer | null>(null);
+  const [chessComUsername, setChessComUsername] = useState<string>('');
+  const [isReportLoading, setIsReportLoading] = useState<boolean>(false);
+  const [quickReportUserInput, setQuickReportUserInput] = useState<string>('');
+
+  const fetchGamesForReport = async (user: string) => {
+    if (!user.trim()) return;
+    setIsReportLoading(true);
+    setChessComUsername(user.trim());
+    try {
+      const res = await fetchChessComRecentGames(user.trim(), 40);
+      setChessComPlayer(res.player);
+      setChessComGames(res.games);
+    } catch (e) {
+      console.warn('Error fetching Chess.com games for report:', e);
+    } finally {
+      setIsReportLoading(false);
+    }
+  };
 
   // Game Over Modal State
   const [gameOverModal, setGameOverModal] = useState<{
@@ -346,39 +359,8 @@ export default function App() {
     setIsBotThinking(true);
     let isActive = true;
 
-    // Configured engine thinking duration (at least 7-10 seconds, default 8s)
-    const thinkingSeconds = Math.max(7, Math.min(10, preferences.engineThinkingSeconds || 8));
-    const thinkingMs = thinkingSeconds * 1000;
-    const startTime = Date.now();
-
-    setBotThinkingStats({
-      secondsLeft: thinkingSeconds,
-      totalSeconds: thinkingSeconds,
-      depth: 1,
-      nodes: 0,
-    });
-
-    const progressTimer = setInterval(() => {
-      const elapsed = (Date.now() - startTime) / 1000;
-      const left = Math.max(0, +(thinkingSeconds - elapsed).toFixed(1));
-      setBotThinkingStats((prev) => ({ ...prev, secondsLeft: left }));
-    }, 100);
-
-    const unsubEval = stockfish.onEvaluation((ev) => {
-      if (isActive && ev) {
-        setBotThinkingStats((prev) => ({
-          ...prev,
-          depth: ev.depth || prev.depth,
-          nodes: ev.nodes || prev.nodes,
-          scoreCp: ev.scoreCp !== undefined ? ev.scoreCp : prev.scoreCp,
-        }));
-      }
-    });
-
-    getStockfishMoveAsync(chess, selectedBot, thinkingMs)
+    getStockfishMoveAsync(chess, selectedBot)
       .then((parsedMove) => {
-        clearInterval(progressTimer);
-        unsubEval();
         if (!isActive) return;
         setIsBotThinking(false);
 
@@ -391,18 +373,14 @@ export default function App() {
         }
       })
       .catch((err) => {
-        clearInterval(progressTimer);
-        unsubEval();
         console.error('Stockfish move execution error:', err);
         if (isActive) setIsBotThinking(false);
       });
 
     return () => {
       isActive = false;
-      clearInterval(progressTimer);
-      unsubEval();
     };
-  }, [inActiveMatch, chess.fen(), gameMode, playerColor, executeMove, preferences.engineThinkingSeconds, selectedBot]);
+  }, [inActiveMatch, chess.fen(), gameMode, playerColor, executeMove, selectedBot]);
 
   const handleGameOver = (result: 'win' | 'loss' | 'draw', reason: string) => {
     setInActiveMatch(false);
@@ -543,26 +521,6 @@ export default function App() {
     (window as any).stockfish = stockfish;
     (window as any).stockfishEval = stockfishEval;
     (window as any).evaluatePosition = evaluateCurrentPosition;
-    (window as any).runEvalBarTests = async () => {
-      console.log('=== Running Automated Stockfish Eval Bar E2E Tests ===');
-      const results = [];
-      for (const pos of BENCHMARK_POSITIONS) {
-        handleLoadPosition(pos.fen, false);
-        const res = await stockfish.evaluatePosition(pos.fen, 10);
-        const info = {
-          position: pos.name,
-          fen: pos.fen,
-          rawUci: res.rawUciScore,
-          sideToMove: res.sideToMove,
-          convertedEval: res.displayEval,
-          scoreCp: res.scoreCp,
-        };
-        results.push(info);
-        console.log(`Verified [${pos.name}]: Raw UCI = ${res.rawUciScore} -> Converted = ${res.displayEval} (${res.scoreCp} cp)`);
-      }
-      console.table(results);
-      return results;
-    };
   }, [chess, executeMove, handleLoadPosition, stockfishEval, evaluateCurrentPosition]);
 
   const handleRequestHint = async () => {
@@ -631,6 +589,14 @@ export default function App() {
     (chess.turn() === 'w' && playerColor === 'w') ||
     (chess.turn() === 'b' && playerColor === 'b');
 
+  const analysisInitialMoves = useMemo(() => {
+    return movesHistory.map((m) => ({
+      from: m.from,
+      to: m.to,
+      promotion: m.promotion,
+    }));
+  }, [movesHistory]);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500/30">
       {/* Sleek Minimalist Navbar */}
@@ -651,7 +617,7 @@ export default function App() {
                 <div className="text-center space-y-2">
                   <span className="text-4xl">♚</span>
                   <h1 className="text-2xl font-black font-display tracking-tight text-slate-100">
-                    Play Chess
+                    Play
                   </h1>
                 </div>
 
@@ -675,10 +641,7 @@ export default function App() {
                   <div className="flex items-center gap-3">
                     <span className="text-3xl">🤖</span>
                     <div className="text-left">
-                      <div className="text-base font-bold">Play Stockfish</div>
-                      <div className="text-xs font-semibold text-slate-800">
-                        WebAssembly Engine · Fast Analysis
-                      </div>
+                      <div className="text-base font-bold">Stockfish</div>
                     </div>
                   </div>
                   <Play className="w-5 h-5 fill-current" />
@@ -687,7 +650,7 @@ export default function App() {
                 {/* Time Controls Selector */}
                 <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3">
                   <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Time Control
+                    Time
                   </div>
                   <div className="grid grid-cols-5 gap-2">
                     {TIME_CONTROLS.map((tc) => (
@@ -707,7 +670,7 @@ export default function App() {
                 </div>
 
                 {/* Other Modes & FEN Loader */}
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
                   <button
                     onClick={() => setActiveTab('bots')}
                     className="p-3.5 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl text-left transition-all cursor-pointer flex flex-col justify-between"
@@ -715,7 +678,6 @@ export default function App() {
                     <span className="text-2xl">🤖</span>
                     <div className="mt-2">
                       <div className="text-xs font-bold text-slate-100">Bots</div>
-                      <div className="text-[11px] text-slate-400">5 Personalities</div>
                     </div>
                   </button>
 
@@ -737,8 +699,17 @@ export default function App() {
                   >
                     <span className="text-2xl">👥</span>
                     <div className="mt-2">
-                      <div className="text-xs font-bold text-slate-100">Local Play</div>
-                      <div className="text-[11px] text-slate-400">Pass & Play</div>
+                      <div className="text-xs font-bold text-slate-100">Friends</div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab('stats')}
+                    className="p-3.5 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl text-left transition-all cursor-pointer flex flex-col justify-between"
+                  >
+                    <span className="text-2xl">🌐</span>
+                    <div className="mt-2">
+                      <div className="text-xs font-bold text-slate-100">Chess.com</div>
                     </div>
                   </button>
 
@@ -748,8 +719,7 @@ export default function App() {
                   >
                     <span className="text-2xl">📋</span>
                     <div className="mt-2">
-                      <div className="text-xs font-bold text-slate-100">Load FEN</div>
-                      <div className="text-[11px] text-slate-400">Custom Position</div>
+                      <div className="text-xs font-bold text-slate-100">Openings</div>
                     </div>
                   </button>
                 </div>
@@ -772,8 +742,6 @@ export default function App() {
                       materialAdvantage={isFlipped ? material.whiteLead : material.blackLead}
                       isBot={isFlipped ? false : opponent.isBot}
                       isThinking={!isFlipped && opponent.isBot && isBotThinking}
-                      thinkingSecondsLeft={botThinkingStats.secondsLeft}
-                      thinkingDepth={botThinkingStats.depth}
                     />
                   </div>
 
@@ -782,9 +750,7 @@ export default function App() {
                     <div className="h-[320px] sm:h-[460px]">
                       <EvalBar
                         evalScore={currentEval}
-                        rawScore={stockfishEval.rawUciScore}
                         displayEval={stockfishEval.displayEval}
-                        depth={stockfishEval.depth}
                         isFlipped={isFlipped}
                         isEvaluating={isEvaluating}
                       />
@@ -821,8 +787,6 @@ export default function App() {
                       materialAdvantage={isFlipped ? material.blackLead : material.whiteLead}
                       isBot={isFlipped ? opponent.isBot : false}
                       isThinking={isFlipped && opponent.isBot && isBotThinking}
-                      thinkingSecondsLeft={botThinkingStats.secondsLeft}
-                      thinkingDepth={botThinkingStats.depth}
                     />
                   </div>
 
@@ -847,81 +811,6 @@ export default function App() {
                         handleUpdatePreferences({ ...preferences, boardTheme: t })
                       }
                       disabled={!inActiveMatch}
-                    />
-
-                    {/* Active Stockfish Deep Analysis Bar */}
-                    {isBotThinking && (
-                      <div className="bg-slate-900/90 border border-cyan-500/40 p-3 rounded-2xl shadow-xl animate-in fade-in duration-150 space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="relative flex h-2.5 w-2.5">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500"></span>
-                            </span>
-                            <span className="font-bold text-slate-100">Stockfish 19 deep analysis (7–10s)</span>
-                          </div>
-                          <div className="font-mono text-cyan-300 font-bold text-xs">
-                            {botThinkingStats.secondsLeft.toFixed(1)}s remaining ({botThinkingStats.totalSeconds}s)
-                          </div>
-                        </div>
-
-                        {/* Animated Progress Bar */}
-                        <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden shadow-inner">
-                          <div
-                            className="bg-linear-to-r from-cyan-500 via-sky-400 to-amber-400 h-full transition-all duration-100 ease-linear rounded-full"
-                            style={{
-                              width: `${Math.min(100, Math.max(0, ((botThinkingStats.totalSeconds - botThinkingStats.secondsLeft) / botThinkingStats.totalSeconds) * 100))}%`,
-                            }}
-                          />
-                        </div>
-
-                        <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                          <span>
-                            Search Depth: <strong className="text-cyan-300 font-bold">{botThinkingStats.depth || 14}+</strong>
-                          </span>
-                          {botThinkingStats.nodes ? (
-                            <span>
-                              Positions: <strong className="text-slate-300">{(botThinkingStats.nodes / 1000).toLocaleString()}k</strong>
-                            </span>
-                          ) : null}
-                          <span className="text-emerald-400 font-medium">Grandmaster Calculation</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Quick Settings & Engine Time Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 bg-slate-900/60 px-3 py-2 rounded-xl border border-slate-800">
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-300 font-semibold">Engine Thinking Time:</span>
-                        <div className="inline-flex rounded-lg bg-slate-950 p-0.5 border border-slate-800">
-                          {[7, 8, 9, 10].map((s) => (
-                            <button
-                              key={s}
-                              onClick={() => handleUpdatePreferences({ ...preferences, engineThinkingSeconds: s })}
-                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
-                                (preferences.engineThinkingSeconds || 8) === s
-                                  ? 'bg-cyan-500 text-slate-950 shadow'
-                                  : 'text-slate-400 hover:text-slate-200'
-                              }`}
-                            >
-                              {s}s
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <span className="text-[11px] text-slate-500">
-                        Stockfish 19 NNUE
-                      </span>
-                    </div>
-
-                    {/* Stockfish Live UCI Output & E2E Position Verification Suite */}
-                    <EvalBarTester
-                      currentFen={chess.fen()}
-                      stockfishEval={stockfishEval}
-                      isEvaluating={isEvaluating}
-                      onSelectPosition={(fen) => {
-                        handleLoadPosition(fen, false);
-                      }}
                     />
                   </div>
                 </div>
@@ -968,11 +857,7 @@ export default function App() {
         ) : activeTab === 'review' ? (
           /* Review with Stockfish */
           <AnalysisView
-            initialMoves={movesHistory.map((m) => ({
-              from: m.from,
-              to: m.to,
-              promotion: m.promotion,
-            }))}
+            initialMoves={analysisInitialMoves}
             initialPgn={reviewPgn || chess.pgn()}
             onExitAnalysis={() => setActiveTab('play')}
           />
@@ -986,10 +871,108 @@ export default function App() {
               setStats(updated);
             }}
           />
+        ) : activeTab === 'report' ? (
+          /* Personal Chess Report from Chess.com Games */
+          chessComGames.length > 0 ? (
+            <PersonalReportView
+              games={chessComGames}
+              player={chessComPlayer}
+              username={chessComUsername}
+              isLoading={isReportLoading}
+              onRefreshGames={() => {
+                if (chessComUsername) fetchGamesForReport(chessComUsername);
+              }}
+              onAnalyzeGame={(pgn) => {
+                setReviewPgn(pgn);
+                try {
+                  const temp = new Chess();
+                  temp.loadPgn(pgn);
+                  const history = temp.history({ verbose: true });
+                  setMovesHistory(
+                    history.map((h) => ({
+                      san: h.san,
+                      from: h.from,
+                      to: h.to,
+                      piece: h.piece as any,
+                      color: h.color as any,
+                      fen: temp.fen(),
+                      eval: 0,
+                    }))
+                  );
+                } catch {}
+                setActiveTab('review');
+              }}
+            />
+          ) : (
+            <div className="max-w-xl mx-auto px-4 py-12 space-y-6">
+              <div className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl text-center space-y-4 animate-in fade-in">
+                <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-3xl mx-auto text-amber-400">
+                  📊
+                </div>
+                <div className="space-y-1">
+                  <h2 className="text-xl font-black text-slate-100 font-display">
+                    Personal Chess Report
+                  </h2>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    Enter any public Chess.com username to import games and generate an objective Stockfish engine report on openings, common mistakes, strong areas, and a personalized improvement plan.
+                  </p>
+                </div>
+
+                {/* Username Input */}
+                <div className="flex gap-2 max-w-md mx-auto pt-2">
+                  <input
+                    type="text"
+                    value={quickReportUserInput}
+                    onChange={(e) => setQuickReportUserInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') fetchGamesForReport(quickReportUserInput);
+                    }}
+                    placeholder="e.g. magnuscarlsen, hikaru"
+                    className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-amber-400 font-mono"
+                  />
+                  <button
+                    onClick={() => fetchGamesForReport(quickReportUserInput)}
+                    disabled={isReportLoading || !quickReportUserInput.trim()}
+                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                  >
+                    {isReportLoading ? (
+                      <span className="inline-block animate-spin">⏳</span>
+                    ) : (
+                      <FileText className="w-3.5 h-3.5" />
+                    )}
+                    <span>Generate</span>
+                  </button>
+                </div>
+
+                {/* Popular suggestions */}
+                <div className="flex items-center justify-center gap-1.5 flex-wrap pt-2">
+                  <span className="text-[10px] text-slate-500 font-medium">Quick examples:</span>
+                  {['hikaru', 'magnuscarlsen', 'gothamchess', 'dannyrench'].map((u) => (
+                    <button
+                      key={u}
+                      onClick={() => {
+                        setQuickReportUserInput(u);
+                        fetchGamesForReport(u);
+                      }}
+                      className="text-[11px] px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono transition-colors cursor-pointer"
+                    >
+                      {u}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )
         ) : (
           /* Stats & Match History */
           <StatsView
             stats={stats}
+            onOpenReport={(games, player, username) => {
+              setChessComGames(games);
+              setChessComPlayer(player);
+              setChessComUsername(username);
+              setActiveTab('report');
+            }}
             onReviewGame={(pgn) => {
               setReviewPgn(pgn);
               try {
@@ -1022,7 +1005,7 @@ export default function App() {
       {showFenModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <h3 className="text-sm font-bold text-slate-100">Load Custom FEN</h3>
+            <h3 className="text-sm font-bold text-slate-100">Openings</h3>
             <textarea
               value={customFenInput}
               onChange={(e) => setCustomFenInput(e.target.value)}
@@ -1046,7 +1029,7 @@ export default function App() {
                 }}
                 className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold cursor-pointer"
               >
-                Load Position
+                Load
               </button>
             </div>
           </div>

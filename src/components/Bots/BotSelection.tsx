@@ -1,113 +1,139 @@
 import React, { useState } from 'react';
 import { BotProfile, TimeControl } from '../../types/chess';
-import { INITIAL_BOTS, TIME_CONTROLS } from '../../utils/mockData';
-import { Bot, Play, Zap, Sliders, Check } from 'lucide-react';
+import { TIME_CONTROLS } from '../../utils/mockData';
+import { tuneStockfishForElo } from '../../utils/engine';
+import { Play, Cpu, Sparkles } from 'lucide-react';
 
 interface BotSelectionProps {
   onStartBotGame: (bot: BotProfile, timeControl: TimeControl, playerColor: 'w' | 'b' | 'random') => void;
 }
 
+const ELO_PRESETS = [
+  { elo: 600, label: 'Beginner', badge: 'Novice' },
+  { elo: 1000, label: 'Casual', badge: 'Casual' },
+  { elo: 1400, label: 'Intermediate', badge: 'Club' },
+  { elo: 1700, label: 'Advanced', badge: 'Adv.' },
+  { elo: 2000, label: 'Expert', badge: 'Expert' },
+  { elo: 2400, label: 'Master', badge: 'Master' },
+  { elo: 2800, label: 'Grandmaster', badge: 'GM' },
+];
+
 export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) => {
-  const [selectedBot, setSelectedBot] = useState<BotProfile>(INITIAL_BOTS[1]);
+  const [selectedElo, setSelectedElo] = useState<number>(1400);
   const [selectedTimeControl, setSelectedTimeControl] = useState<TimeControl>(TIME_CONTROLS[2]); // 3-0
   const [playerColor, setPlayerColor] = useState<'w' | 'b' | 'random'>('w');
-  const [customElo, setCustomElo] = useState<number>(1500);
-  const [isCustom, setIsCustom] = useState<boolean>(false);
+
+  const tuning = tuneStockfishForElo(selectedElo);
 
   const handleStart = () => {
-    let finalBot = selectedBot;
-    if (isCustom) {
-      finalBot = {
-        id: 'bot-custom',
-        name: `Stockfish (${customElo})`,
-        elo: customElo,
-        avatarBg: 'bg-indigo-950/70 border-indigo-500/30 text-indigo-400',
-        avatarIcon: '🤖',
-        description: `Calibrated to Elo ${customElo}`,
-        tagline: `Engine Elo ${customElo}`,
-        blunderRate: Math.max(0, (2600 - customElo) / 3000),
-        personality: customElo < 1200 ? 'novice' : customElo < 2000 ? 'tactical' : 'grandmaster',
-        depth: Math.max(1, Math.round((customElo / 2800) * 8)),
-        favoriteOpening: 'Stockfish Book',
-      };
-    }
-    onStartBotGame(finalBot, selectedTimeControl, playerColor);
+    const personality: BotProfile['personality'] =
+      selectedElo < 1000 ? 'novice' : selectedElo < 1800 ? 'tactical' : selectedElo < 2400 ? 'master' : 'grandmaster';
+
+    const tunedBot: BotProfile = {
+      id: `stockfish-${selectedElo}`,
+      name: `Stockfish ${selectedElo}`,
+      elo: selectedElo,
+      title: selectedElo >= 2400 ? 'GM' : selectedElo >= 2000 ? 'NM' : undefined,
+      avatarBg: 'bg-emerald-950/70 border-emerald-500/30 text-emerald-400',
+      avatarIcon: '🤖',
+      description: tuning.description,
+      tagline: `Tuned to ${selectedElo} Elo`,
+      blunderRate: tuning.blunderRate,
+      personality,
+      depth: tuning.depth,
+      favoriteOpening: 'Adaptive Opening Repertoire',
+    };
+
+    onStartBotGame(tunedBot, selectedTimeControl, playerColor);
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6 animate-in fade-in duration-200">
-      {/* Bot Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {INITIAL_BOTS.map((bot) => {
-          const isSelected = !isCustom && selectedBot.id === bot.id;
-          return (
-            <button
-              key={bot.id}
-              onClick={() => {
-                setSelectedBot(bot);
-                setIsCustom(false);
-              }}
-              className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                isSelected
-                  ? 'border-amber-400 bg-amber-400/10 shadow-lg shadow-amber-500/5 scale-[1.02]'
-                  : 'border-slate-800 bg-slate-900 hover:border-slate-700 hover:bg-slate-800/60'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-3xl">{bot.avatarIcon}</span>
-                <span className="text-xs font-mono font-bold text-amber-400 bg-slate-950/80 px-2 py-0.5 rounded-md border border-slate-800">
-                  {bot.elo}
-                </span>
-              </div>
-
-              <div className="mt-4">
-                <div className="text-sm font-bold text-slate-100 flex items-center gap-1">
-                  <span>{bot.name}</span>
-                  {bot.title && (
-                    <span className="text-[10px] bg-rose-500/20 text-rose-400 px-1 rounded font-mono font-bold">
-                      {bot.title}
-                    </span>
-                  )}
-                </div>
-                <div className="text-[11px] text-slate-400 mt-0.5 capitalize">
-                  {bot.personality}
-                </div>
-              </div>
-            </button>
-          );
-        })}
+    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6 animate-in fade-in duration-200">
+      {/* Header */}
+      <div className="text-center space-y-1">
+        <h1 className="text-2xl sm:text-3xl font-black text-slate-100 font-display tracking-tight">
+          Stockfish
+        </h1>
       </div>
 
-      {/* Custom Elo Switch */}
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
-        <button
-          onClick={() => setIsCustom(!isCustom)}
-          className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 cursor-pointer ${
-            isCustom
-              ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
-              : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
-          }`}
-        >
-          <Sliders className="w-3.5 h-3.5" />
-          <span>{isCustom ? 'Custom Stockfish Active' : 'Custom Rating Slider'}</span>
-        </button>
-
-        {isCustom && (
-          <div className="flex items-center gap-4 w-full sm:w-auto flex-1 max-w-md">
-            <input
-              type="range"
-              min="400"
-              max="2800"
-              step="50"
-              value={customElo}
-              onChange={(e) => setCustomElo(parseInt(e.target.value, 10))}
-              className="flex-1 accent-amber-400 cursor-pointer h-2 bg-slate-800 rounded-lg"
-            />
-            <span className="text-sm font-mono font-bold text-amber-400 shrink-0">
-              {customElo} Elo
+      {/* Main Elo Tuning Card */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+        {/* Rating Display */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+          <div className="space-y-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Rating
             </span>
+            <div className="flex items-center gap-3">
+              <span className="text-3xl sm:text-4xl font-black font-mono text-emerald-400">
+                {selectedElo} <span className="text-base text-slate-400 font-sans font-medium">Elo</span>
+              </span>
+              {selectedElo >= 2400 ? (
+                <span className="text-xs bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded font-mono font-bold">
+                  GM
+                </span>
+              ) : selectedElo >= 2000 ? (
+                <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-mono font-bold">
+                  Master
+                </span>
+              ) : null}
+            </div>
           </div>
-        )}
+        </div>
+
+        {/* Elo Presets */}
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            Presets
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            {ELO_PRESETS.map((preset) => {
+              const isSelected = selectedElo === preset.elo;
+              return (
+                <button
+                  key={preset.elo}
+                  onClick={() => setSelectedElo(preset.elo)}
+                  className={`p-3 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                    isSelected
+                      ? 'border-emerald-400 bg-emerald-500/15 shadow-md text-slate-100 scale-102'
+                      : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-700 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <span className="text-xs font-semibold text-slate-400">
+                    {preset.label}
+                  </span>
+                  <span className="text-sm font-black font-mono text-emerald-400">
+                    {preset.elo}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Fine-Tuning Slider */}
+        <div className="space-y-2 pt-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-slate-400 uppercase tracking-wider">Elo</span>
+            <span className="font-mono text-emerald-400 font-bold">{selectedElo}</span>
+          </div>
+          <input
+            type="range"
+            min="400"
+            max="2800"
+            step="25"
+            value={selectedElo}
+            onChange={(e) => setSelectedElo(parseInt(e.target.value, 10))}
+            className="w-full accent-emerald-400 cursor-pointer h-2.5 bg-slate-800 rounded-lg"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+            <span>400</span>
+            <span>1200</span>
+            <span>1800</span>
+            <span>2400</span>
+            <span>2800</span>
+          </div>
+        </div>
       </div>
 
       {/* Match Options: Color & Time */}
@@ -129,7 +155,7 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
                   onClick={() => setPlayerColor(c.id)}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                     playerColor === c.id
-                      ? 'bg-amber-500 text-slate-950 shadow-md'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
                       : 'bg-slate-800 text-slate-300 hover:text-white'
                   }`}
                 >
@@ -150,7 +176,7 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
                   onClick={() => setSelectedTimeControl(tc)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer whitespace-nowrap ${
                     selectedTimeControl.id === tc.id
-                      ? 'bg-amber-500 text-slate-950 shadow-md'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
                       : 'bg-slate-800 text-slate-300 hover:text-white'
                   }`}
                 >
@@ -165,7 +191,7 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
         <div className="pt-2 flex justify-end">
           <button
             onClick={handleStart}
-            className="w-full sm:w-auto px-8 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full sm:w-auto px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
           >
             <Play className="w-4 h-4 fill-current" />
             <span>Play</span>

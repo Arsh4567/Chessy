@@ -122,22 +122,19 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
       {/* Header */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 text-2xl shadow-inner">
+          <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 text-xl shadow-inner">
             ⚡
           </div>
           <div>
             <h1 className="text-xl sm:text-2xl font-bold font-display text-slate-100">
-              Tactical Puzzle Trainer
+              Puzzles
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Solve master tactics, skewers, forks, and sacrifices to boost your tactical rating
-            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-4 bg-slate-950 px-4 py-2 rounded-xl border border-slate-800">
           <div className="text-center">
-            <span className="text-[10px] text-slate-400 uppercase font-bold block">Puzzle Rating</span>
+            <span className="text-[10px] text-slate-400 uppercase font-bold block">Rating</span>
             <span className="text-lg font-mono font-bold text-amber-400">{puzzleRating}</span>
           </div>
           <div className="text-center border-l border-slate-800 pl-4">
@@ -167,7 +164,7 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <div>
               <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-amber-400">
-                Difficulty: {currentPuzzle.rating} Elo
+                {currentPuzzle.rating} Elo
               </span>
               <h2 className="text-base font-bold text-slate-100 mt-2">
                 {currentPuzzle.theme}
@@ -178,39 +175,29 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
             </span>
           </div>
 
-          <p className="text-xs text-slate-300 leading-relaxed">
-            {currentPuzzle.description}
-          </p>
-
           {/* Status Alert Banner */}
           {status === 'solved' && (
-            <div className="p-4 bg-emerald-950/80 border border-emerald-500/50 rounded-xl space-y-2 animate-in zoom-in-95">
+            <div className="p-3.5 bg-emerald-950/80 border border-emerald-500/50 rounded-xl space-y-1 animate-in zoom-in-95">
               <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
-                <CheckCircle className="w-5 h-5" />
-                <span>Puzzle Solved! (+15 Rating)</span>
+                <CheckCircle className="w-4 h-4" />
+                <span>Solved (+15)</span>
               </div>
-              <p className="text-xs text-emerald-200">
-                Outstanding tactical vision. You found the optimal sequence.
-              </p>
             </div>
           )}
 
           {status === 'failed' && (
-            <div className="p-4 bg-rose-950/80 border border-rose-500/50 rounded-xl space-y-2 animate-in zoom-in-95">
+            <div className="p-3.5 bg-rose-950/80 border border-rose-500/50 rounded-xl space-y-1 animate-in zoom-in-95">
               <div className="text-rose-400 font-bold text-sm">
-                Incorrect Move (-10 Rating)
+                Failed (-10)
               </div>
-              <p className="text-xs text-rose-200">
-                That move misses the decisive tactic. Try again or check the hint!
-              </p>
             </div>
           )}
 
           {/* Hint Reveal */}
           {hintShown && (
             <div className="p-3 bg-amber-950/40 border border-amber-500/30 rounded-xl text-xs text-amber-300 space-y-1">
-              <span className="font-bold block">💡 Tactical Clue:</span>
-              <span>Next move starts with: <strong>{currentPuzzle.moves[moveStep]?.slice(0, 2)}</strong></span>
+              <span className="font-bold block">💡 Hint:</span>
+              <span>Next move: <strong>{currentPuzzle.moves[moveStep]?.slice(0, 2)}</strong></span>
             </div>
           )}
 
@@ -223,14 +210,14 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
                 className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-300 font-semibold text-xs rounded-xl border border-slate-700 transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 <Lightbulb className="w-4 h-4" />
-                <span>{hintShown ? 'Hint Revealed' : 'Get Tactical Hint'}</span>
+                <span>{hintShown ? 'Hint Shown' : 'Hint'}</span>
               </button>
             ) : status === 'solved' ? (
               <button
                 onClick={handleNextPuzzle}
                 className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-colors shadow-md flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>Next Puzzle</span>
+                <span>Next</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             ) : (
@@ -240,13 +227,13 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
                   className="py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Try Again</span>
+                  <span>Retry</span>
                 </button>
                 <button
                   onClick={handleNextPuzzle}
                   className="py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <span>Skip Puzzle</span>
+                  <span>Skip</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>

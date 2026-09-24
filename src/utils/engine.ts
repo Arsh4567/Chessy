@@ -1,6 +1,7 @@
 import { Chess, Move } from 'chess.js';
 import { BotProfile, MoveClassification, AnalyzedGame, AnalyzedMove, PieceType } from '../types/chess';
 import { stockfish } from './stockfishWorker';
+import { classifyEngineMove } from './moveClassification';
 
 // Standard piece valuation
 const PIECE_VALUES: Record<string, number> = {
@@ -204,21 +205,49 @@ export function getBotMove(chess: Chess, bot: BotProfile): Move | null {
   return result.bestMove || legalMoves[0];
 }
 
+export interface EngineEloTuning {
+  elo: number;
+  skillLevel: number;
+  depth: number;
+  moveTimeMs: number;
+  blunderRate: number;
+  description: string;
+}
+
 /**
- * Gets real Stockfish move using WebAssembly worker, with graceful fallback
- * Default 8000ms gives Stockfish 7-10 seconds to analyze and find the best move
+ * Calibrates Stockfish engine parameters to match a selected Elo rating (400 - 2800)
+ */
+export function tuneStockfishForElo(elo: number): EngineEloTuning {
+  const clampedElo = Math.max(400, Math.min(2800, Math.round(elo)));
+  const skillLevel = Math.max(0, Math.min(20, Math.round(((clampedElo - 400) / 2400) * 20)));
+  const depth = Math.max(2, Math.min(22, Math.round(2 + ((clampedElo - 400) / 2400) * 20)));
+  const moveTimeMs = Math.round(400 + ((clampedElo - 400) / 2400) * 1600);
+  const blunderRate = Math.max(0, (2600 - clampedElo) / 3000);
+
+  let description = 'Calibrated Engine';
+  if (clampedElo < 800) description = 'Beginner: occasional mistakes, natural human pace';
+  else if (clampedElo < 1200) description = 'Casual: solid basics, handles fundamental tactics';
+  else if (clampedElo < 1600) description = 'Club: active positional play, standard openings';
+  else if (clampedElo < 2000) description = 'Expert: sharp tactical calculation and defense';
+  else if (clampedElo < 2400) description = 'Master: deep strategic plans, high precision';
+  else description = 'Grandmaster: ruthless tactical accuracy and endgame mastery';
+
+  return { elo: clampedElo, skillLevel, depth, moveTimeMs, blunderRate, description };
+}
+
+/**
+ * Gets real Stockfish move using WebAssembly worker calibrated to the bot's Elo
  */
 export async function getStockfishMoveAsync(
   chess: Chess,
   bot: BotProfile,
-  moveTimeMs: number = 8000
+  customMoveTimeMs?: number
 ): Promise<{ from: string; to: string; promotion?: string }> {
   try {
-    // Map bot elo (450 to 2800) to Stockfish skill level (0 to 20)
-    const skillLevel = Math.max(0, Math.min(20, Math.round(((bot.elo - 400) / 2400) * 20)));
-    const depth = 26; // deep search limit to allow 7-10s calculation
+    const tuning = tuneStockfishForElo(bot.elo);
+    const moveTime = customMoveTimeMs || tuning.moveTimeMs;
 
-    const sfMove = await stockfish.getBestMove(chess.fen(), skillLevel, depth, moveTimeMs);
+    const sfMove = await stockfish.getBestMove(chess.fen(), tuning.skillLevel, tuning.depth, moveTime);
     if (sfMove && sfMove.from && sfMove.to) {
       // Validate with chess.js against current game state
       const test = new Chess(chess.fen());
@@ -275,6 +304,16 @@ export function analyzeMatch(
 
   let whiteBrilliants = 0;
   let blackBrilliants = 0;
+  let whiteBests = 0;
+  let blackBests = 0;
+  let whiteExcellents = 0;
+  let blackExcellents = 0;
+  let whiteGoods = 0;
+  let blackGoods = 0;
+  let whiteInaccuracies = 0;
+  let blackInaccuracies = 0;
+  let whiteMistakes = 0;
+  let blackMistakes = 0;
   let whiteBlunders = 0;
   let blackBlunders = 0;
 
@@ -285,10 +324,14 @@ export function analyzeMatch(
     const m = historyMoves[i];
     const turn = sim.turn(); // Turn BEFORE move
     const evalBefore = evaluateBoard(sim);
+    const moveNumber = Math.floor(i / 2) + 1;
 
     // Calculate best move before player moved
     const bestMoveResult = minimax(sim, 2, -Infinity, Infinity, turn === 'w');
     const bestMoveSan = bestMoveResult.bestMove?.san || '';
+
+    // Position clone before move for tactical checks
+    const beforeClone = new Chess(sim.fen());
 
     // Execute player move safely
     let moveResult: Move | null = null;
@@ -302,38 +345,37 @@ export function analyzeMatch(
     const evalAfter = evaluateBoard(sim);
     const evalDelta = turn === 'w' ? (evalAfter - evalBefore) : (evalBefore - evalAfter);
 
-    // Determine move classification
-    let classification: MoveClassification = 'good';
-    let commentary = '';
+    // Classify move with real engine rules, actual eval loss & context scaling
+    const { classification, commentary, evalLoss } = classifyEngineMove(
+      beforeClone,
+      moveResult,
+      evalBefore,
+      evalAfter,
+      bestMoveSan,
+      moveNumber
+    );
 
-    const isSacrifice = moveResult.captured === undefined &&
-      (moveResult.piece === 'q' || moveResult.piece === 'r' || moveResult.piece === 'b' || moveResult.piece === 'n') &&
-      evalDelta >= 0;
-
-    if (isSacrifice && evalDelta > 50) {
-      classification = 'brilliant';
-      commentary = 'A brilliant tactical sacrifice that unleashes a decisive advantage!';
-      if (turn === 'w') whiteBrilliants++; else blackBrilliants++;
-    } else if (bestMoveSan === moveResult.san) {
-      classification = 'best';
-      commentary = 'The best engine move in the position.';
-    } else if (evalDelta >= -20) {
-      classification = 'good';
-      commentary = 'A solid, active move maintaining the position.';
-    } else if (evalDelta >= -80) {
-      classification = 'inaccuracy';
-      commentary = `Slight inaccuracy. Better was ${bestMoveSan}.`;
-    } else if (evalDelta >= -200) {
-      classification = 'mistake';
-      commentary = `Mistake that conceded the initiative. Recommended: ${bestMoveSan}.`;
+    // Track classification counts
+    if (turn === 'w') {
+      if (classification === 'brilliant') whiteBrilliants++;
+      else if (classification === 'best') whiteBests++;
+      else if (classification === 'excellent') whiteExcellents++;
+      else if (classification === 'good') whiteGoods++;
+      else if (classification === 'inaccuracy') whiteInaccuracies++;
+      else if (classification === 'mistake') whiteMistakes++;
+      else if (classification === 'blunder') whiteBlunders++;
     } else {
-      classification = 'blunder';
-      commentary = `Severe blunder! Overlooked tactical reply. Best was ${bestMoveSan}.`;
-      if (turn === 'w') whiteBlunders++; else blackBlunders++;
+      if (classification === 'brilliant') blackBrilliants++;
+      else if (classification === 'best') blackBests++;
+      else if (classification === 'excellent') blackExcellents++;
+      else if (classification === 'good') blackGoods++;
+      else if (classification === 'inaccuracy') blackInaccuracies++;
+      else if (classification === 'mistake') blackMistakes++;
+      else if (classification === 'blunder') blackBlunders++;
     }
 
-    // Move accuracy calculation
-    const moveAcc = Math.max(0, Math.min(100, 100 + evalDelta / 2));
+    // Move accuracy calculation based on actual evaluation loss
+    const moveAcc = Math.max(0, Math.min(100, 100 - evalLoss * 0.35));
     if (turn === 'w') {
       whiteAccuracySum += moveAcc;
       whiteMovesCount++;
@@ -367,6 +409,16 @@ export function analyzeMatch(
     analyzedMoves,
     whiteBrilliants,
     blackBrilliants,
+    whiteBests,
+    blackBests,
+    whiteExcellents,
+    blackExcellents,
+    whiteGoods,
+    blackGoods,
+    whiteInaccuracies,
+    blackInaccuracies,
+    whiteMistakes,
+    blackMistakes,
     whiteBlunders,
     blackBlunders,
   };

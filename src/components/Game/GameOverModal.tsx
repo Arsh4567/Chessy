@@ -110,11 +110,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           </div>
           <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
             <div className="text-center">
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider block">White Accuracy</span>
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider block">White</span>
               <span className="text-base font-mono font-bold text-slate-100">{whiteAccuracy}%</span>
             </div>
             <div className="text-center border-l border-slate-800">
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Black Accuracy</span>
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Black</span>
               <span className="text-base font-mono font-bold text-slate-100">{blackAccuracy}%</span>
             </div>
           </div>
@@ -124,10 +124,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         <div className="space-y-2">
           <button
             onClick={onAnalyze}
-            className="w-full py-2.5 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-2.5 px-4 bg-linear-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-sky-950/50 flex items-center justify-center gap-2 cursor-pointer"
           >
             <BarChart3 className="w-4 h-4" />
-            <span>Full Game Engine Review</span>
+            <span>Analysis</span>
           </button>
 
           <div className="grid grid-cols-2 gap-2">
@@ -143,7 +143,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs rounded-xl border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>New Game</span>
+              <span>Play</span>
             </button>
           </div>
         </div>

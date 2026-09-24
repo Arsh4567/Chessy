@@ -541,6 +541,143 @@ export class StockfishEngine {
     this.evalQueue = task.catch(() => this.computeFallbackEval(fen));
     return task;
   }
+
+  private currentAnalysisSessionId: number = 0;
+
+  /**
+   * Starts continuous, infinite Stockfish analysis for the selected position.
+   * Keeps sending live updates for depth, eval, PV, nodes, nps, and best move as depth increases.
+   * Throttles UI updates to ~15fps (approx 70ms) to prevent main-thread saturation and board lag,
+   * while allowing the Stockfish Web Worker to calculate at 100% capacity.
+   * Immediately stops prior analysis and starts analyzing the new position.
+   * Returns a cleanup function to immediately stop the analysis when the position changes.
+   */
+  public startContinuousAnalysis(
+    fen: string,
+    onUpdate: (evaluation: StockfishEvaluation) => void
+  ): () => void {
+    this.currentAnalysisSessionId++;
+    const sessionId = this.currentAnalysisSessionId;
+    let isActive = true;
+    let removeListener: (() => void) | null = null;
+    let lastUpdateTime = 0;
+    let pendingEval: StockfishEvaluation | null = null;
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushUpdate = () => {
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
+        throttleTimer = null;
+      }
+      if (pendingEval && isActive && sessionId === this.currentAnalysisSessionId) {
+        const toSend = pendingEval;
+        pendingEval = null;
+        lastUpdateTime = performance.now();
+        onUpdate(toSend);
+      }
+    };
+
+    const run = async () => {
+      try {
+        await this.ensureReady();
+        if (!isActive || sessionId !== this.currentAnalysisSessionId) return;
+
+        // Stop prior active engine search immediately
+        await this.stopActiveSearch();
+        if (!isActive || sessionId !== this.currentAnalysisSessionId) return;
+
+        this.currentFen = fen.trim();
+        const parts = this.currentFen.split(/\s+/);
+        this.currentSideToMove = parts.length > 1 && parts[1] === 'b' ? 'b' : 'w';
+
+        // Provide instantaneous fallback/static eval while engine begins searching
+        const initialFallback = this.computeFallbackEval(this.currentFen);
+        if (isActive && sessionId === this.currentAnalysisSessionId) {
+          onUpdate(initialFallback);
+        }
+
+        if (this.workerFailed || !this.worker) return;
+
+        // Subscribe to live continuous evaluation updates from worker info lines with smart throttling
+        removeListener = this.onEvaluation((evalResult) => {
+          if (!isActive || sessionId !== this.currentAnalysisSessionId) return;
+          pendingEval = evalResult;
+          const now = performance.now();
+
+          // Dispatch immediately on first depth or substantial intervals (70ms) or mate discoveries
+          if (evalResult.depth <= 2 || evalResult.mate !== undefined || now - lastUpdateTime >= 70) {
+            flushUpdate();
+          } else if (!throttleTimer) {
+            throttleTimer = setTimeout(flushUpdate, 70 - (now - lastUpdateTime));
+          }
+        });
+
+        this.setSkillLevel(20);
+        this.sendCommand(`position fen ${this.currentFen}`);
+        this.sendCommand('go infinite');
+        this.isSearching = true;
+      } catch (err) {
+        console.warn('[Stockfish] Continuous analysis error:', err);
+      }
+    };
+
+    run();
+
+    return () => {
+      isActive = false;
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
+        throttleTimer = null;
+      }
+      if (removeListener) {
+        removeListener();
+        removeListener = null;
+      }
+      if (sessionId === this.currentAnalysisSessionId) {
+        this.sendCommand('stop');
+        this.isSearching = false;
+      }
+    };
+  }
+}
+
+// High-speed LRU Cache for formatted Principal Variation (PV) SAN lines
+const pvSanCache = new Map<string, string[]>();
+const MAX_PV_CACHE_SIZE = 150;
+
+/**
+ * Formats engine raw PV UCI moves into readable SAN chess notation with caching
+ */
+export function formatPvToSan(fen: string, pvUci?: string[]): string[] {
+  if (!pvUci || pvUci.length === 0) return [];
+  const cacheKey = `${fen}|${pvUci.join(',')}`;
+  const cached = pvSanCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const c = new Chess(fen);
+    const sanMoves: string[] = [];
+    for (const uci of pvUci) {
+      const parsed = parseUciMove(uci);
+      if (!parsed) break;
+      const res = c.move({
+        from: parsed.from,
+        to: parsed.to,
+        promotion: parsed.promotion,
+      });
+      if (!res) break;
+      sanMoves.push(res.san);
+    }
+
+    if (pvSanCache.size >= MAX_PV_CACHE_SIZE) {
+      const oldestKey = pvSanCache.keys().next().value;
+      if (oldestKey) pvSanCache.delete(oldestKey);
+    }
+    pvSanCache.set(cacheKey, sanMoves);
+    return sanMoves;
+  } catch {
+    return [];
+  }
 }
 
 // Global Singleton

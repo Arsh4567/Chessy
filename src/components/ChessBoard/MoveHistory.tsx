@@ -1,6 +1,7 @@
-import React, { useRef, useEffect } from 'react';
-import { AnalyzedMove } from '../../types/chess';
-import { Sparkles, Star, AlertTriangle, XCircle, HelpCircle, BookOpen } from 'lucide-react';
+import React, { useRef, useEffect, useMemo } from 'react';
+import { AnalyzedMove, MoveClassification } from '../../types/chess';
+import { BookOpen } from 'lucide-react';
+import { MOVE_QUALITY_SIGNS } from '../../utils/moveClassification';
 
 interface MoveHistoryProps {
   moves: AnalyzedMove[];
@@ -9,7 +10,7 @@ interface MoveHistoryProps {
   openingName?: string;
 }
 
-export const MoveHistory: React.FC<MoveHistoryProps> = ({
+export const MoveHistory: React.FC<MoveHistoryProps> = React.memo(({
   moves,
   currentMoveIndex,
   onSelectMove,
@@ -24,36 +25,34 @@ export const MoveHistory: React.FC<MoveHistoryProps> = ({
     }
   }, [moves.length, currentMoveIndex]);
 
-  // Group into turns: [{ moveNum: 1, white: AnalyzedMove, black?: AnalyzedMove }, ...]
-  const turnRows: { moveNum: number; white: AnalyzedMove; whiteIdx: number; black?: AnalyzedMove; blackIdx?: number }[] = [];
-  for (let i = 0; i < moves.length; i += 2) {
-    turnRows.push({
-      moveNum: Math.floor(i / 2) + 1,
-      white: moves[i],
-      whiteIdx: i,
-      black: moves[i + 1],
-      blackIdx: i + 1 < moves.length ? i + 1 : undefined,
-    });
-  }
-
-  const renderBadge = (classification?: string) => {
-    if (!classification) return null;
-    switch (classification) {
-      case 'brilliant':
-        return <Sparkles className="w-3.5 h-3.5 text-cyan-400 inline ml-1 shrink-0" />;
-      case 'best':
-        return <Star className="w-3.5 h-3.5 text-emerald-400 inline ml-1 shrink-0" />;
-      case 'blunder':
-        return <XCircle className="w-3.5 h-3.5 text-rose-500 inline ml-1 shrink-0" />;
-      case 'mistake':
-        return <AlertTriangle className="w-3.5 h-3.5 text-amber-500 inline ml-1 shrink-0" />;
-      case 'inaccuracy':
-        return <HelpCircle className="w-3.5 h-3.5 text-yellow-400/80 inline ml-1 shrink-0" />;
-      case 'book':
-        return <BookOpen className="w-3.5 h-3.5 text-blue-400 inline ml-1 shrink-0" />;
-      default:
-        return null;
+  // Group into turns efficiently
+  const turnRows = useMemo(() => {
+    const rows: { moveNum: number; white: AnalyzedMove; whiteIdx: number; black?: AnalyzedMove; blackIdx?: number }[] = [];
+    for (let i = 0; i < moves.length; i += 2) {
+      rows.push({
+        moveNum: Math.floor(i / 2) + 1,
+        white: moves[i],
+        whiteIdx: i,
+        black: moves[i + 1],
+        blackIdx: i + 1 < moves.length ? i + 1 : undefined,
+      });
     }
+    return rows;
+  }, [moves]);
+
+  const renderBadge = (classification?: MoveClassification) => {
+    if (!classification) return null;
+    const sign = MOVE_QUALITY_SIGNS[classification];
+    if (!sign) return null;
+
+    return (
+      <span
+        className={`inline-flex items-center justify-center font-mono font-black text-[10px] px-1.5 py-0.2 rounded border shrink-0 ml-1.5 ${sign.badgeBg} ${sign.badgeText} ${sign.badgeBorder}`}
+        title={`${sign.label} (${sign.symbol}): ${sign.description}`}
+      >
+        {sign.symbol}
+      </span>
+    );
   };
 
   return (
@@ -63,11 +62,11 @@ export const MoveHistory: React.FC<MoveHistoryProps> = ({
         <div className="flex items-center gap-2 overflow-hidden">
           <BookOpen className="w-4 h-4 text-amber-400 shrink-0" />
           <span className="text-xs font-semibold text-slate-200 truncate">
-            {openingName || 'Standard Opening'}
+            {openingName || 'Opening'}
           </span>
         </div>
         <span className="text-[11px] font-mono text-slate-400 shrink-0">
-          {moves.length} ply
+          {moves.length} moves
         </span>
       </div>
 
@@ -75,7 +74,7 @@ export const MoveHistory: React.FC<MoveHistoryProps> = ({
       <div ref={containerRef} className="flex-1 p-2 overflow-y-auto font-mono text-xs space-y-0.5">
         {turnRows.length === 0 ? (
           <div className="h-full flex items-center justify-center text-slate-400 text-xs py-8">
-            Game started. White to move.
+            White to move.
           </div>
         ) : (
           turnRows.map((row) => (
@@ -159,4 +158,4 @@ export const MoveHistory: React.FC<MoveHistoryProps> = ({
       </div>
     </div>
   );
-};
+});

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Swords, Bot, Search, Zap, BarChart2, Settings } from 'lucide-react';
+import { Swords, Bot, Search, Zap, BarChart2, FileText, Settings } from 'lucide-react';
 
-export type NavTab = 'play' | 'bots' | 'review' | 'puzzles' | 'stats';
+export type NavTab = 'play' | 'bots' | 'review' | 'puzzles' | 'stats' | 'report';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -14,7 +14,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentTab,
   onSelectTab,
   onOpenSettings,
-  puzzleRating = 1500,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-slate-950/90 border-b border-slate-800/80 backdrop-blur-md">
@@ -25,7 +24,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           className="flex items-center gap-2 text-slate-100 hover:text-amber-400 transition-colors cursor-pointer group"
         >
           <span className="text-xl group-hover:scale-110 transition-transform">♚</span>
-          <span className="text-sm font-black font-display tracking-wider uppercase">CHESS</span>
+          <span className="text-sm font-black font-display tracking-wider uppercase">Chess</span>
         </button>
 
         {/* Short Clean Nav */}
@@ -39,7 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <Swords className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Play</span>
+            <span>Play</span>
           </button>
 
           <button
@@ -51,7 +50,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <Bot className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Bots</span>
+            <span>Stockfish</span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('puzzles')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              currentTab === 'puzzles'
+                ? 'bg-amber-500 text-slate-950 shadow-md'
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span>Puzzles</span>
           </button>
 
           <button
@@ -63,19 +74,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <Search className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Review</span>
-          </button>
-
-          <button
-            onClick={() => onSelectTab('puzzles')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              currentTab === 'puzzles'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
-                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
-            }`}
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-400" />
-            <span className="hidden sm:inline">Puzzles</span>
+            <span>Analysis</span>
           </button>
 
           <button
@@ -87,7 +86,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <BarChart2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Stats</span>
+            <span>Games</span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('report')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              currentTab === 'report'
+                ? 'bg-amber-500 text-slate-950 shadow-md'
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Report</span>
           </button>
         </nav>
 
@@ -96,7 +107,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={onOpenSettings}
             className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition-all cursor-pointer"
-            title="Preferences & Engine Settings"
+            title="Settings"
           >
             <Settings className="w-4 h-4" />
           </button>

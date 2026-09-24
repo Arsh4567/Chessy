@@ -7,7 +7,7 @@ interface PieceIconProps {
   className?: string;
 }
 
-export const PieceIcon: React.FC<PieceIconProps> = ({ type, color, className = 'w-full h-full' }) => {
+export const PieceIcon: React.FC<PieceIconProps> = React.memo(({ type, color, className = 'w-full h-full' }) => {
   const isWhite = color === 'w';
   const fill = isWhite ? '#ffffff' : '#1e293b';
   const stroke = isWhite ? '#334155' : '#0f172a';
@@ -82,4 +82,4 @@ export const PieceIcon: React.FC<PieceIconProps> = ({ type, color, className = '
     default:
       return null;
   }
-};
+});

@@ -39,7 +39,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
           onClick={onResign}
           disabled={disabled}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-rose-400 hover:bg-rose-950/40 border border-transparent hover:border-rose-800/60 transition-colors disabled:opacity-40"
-          title="Resign Game"
+          title="Resign"
         >
           <Flag className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Resign</span>
@@ -50,7 +50,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
           onClick={onOfferDraw}
           disabled={disabled}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-amber-300 hover:bg-amber-950/40 border border-transparent hover:border-amber-800/60 transition-colors disabled:opacity-40"
-          title="Offer Draw"
+          title="Draw"
         >
           <Handshake className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Draw</span>
@@ -62,7 +62,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
             onClick={onTakeback}
             disabled={disabled}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 border border-transparent hover:border-slate-700 transition-colors disabled:opacity-40"
-            title="Take Back Move"
+            title="Takeback"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Takeback</span>
@@ -75,10 +75,10 @@ export const GameControls: React.FC<GameControlsProps> = ({
         <button
           onClick={onRequestHint}
           disabled={disabled}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-amber-300 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-600/40 transition-colors"
-          title="Stockfish Engine Hint"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-sky-300 bg-sky-950/50 hover:bg-sky-900/60 border border-sky-500/40 transition-colors cursor-pointer"
+          title="Hint"
         >
-          <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
+          <Lightbulb className="w-3.5 h-3.5 text-sky-400" />
           <span className="hidden sm:inline">Hint</span>
         </button>
 
@@ -86,7 +86,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
         <button
           onClick={onFlipBoard}
           className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
-          title="Flip Board"
+          title="Flip"
         >
           <ArrowLeftRight className="w-4 h-4" />
         </button>
@@ -95,7 +95,7 @@ export const GameControls: React.FC<GameControlsProps> = ({
         <button
           onClick={onToggleMute}
           className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
-          title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
+          title={isMuted ? 'Unmute' : 'Mute'}
         >
           {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
         </button>
@@ -104,9 +104,10 @@ export const GameControls: React.FC<GameControlsProps> = ({
         <select
           value={currentTheme}
           onChange={(e) => onChangeTheme(e.target.value as any)}
-          className="bg-slate-800 text-slate-200 text-xs rounded-lg px-2 py-1.5 border border-slate-700 outline-none cursor-pointer focus:border-amber-400"
-          title="Board Theme"
+          className="bg-slate-800 text-slate-200 text-xs rounded-lg px-2 py-1.5 border border-slate-700 outline-none cursor-pointer focus:border-sky-400"
+          title="Theme"
         >
+          <option value="cobalt">Cobalt</option>
           <option value="emerald">Emerald</option>
           <option value="wood">Wood</option>
           <option value="midnight">Midnight</option>

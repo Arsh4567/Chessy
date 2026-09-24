@@ -53,6 +53,16 @@ export interface AnalyzedGame {
   analyzedMoves: AnalyzedMove[];
   whiteBrilliants: number;
   blackBrilliants: number;
+  whiteBests: number;
+  blackBests: number;
+  whiteExcellents: number;
+  blackExcellents: number;
+  whiteGoods: number;
+  blackGoods: number;
+  whiteInaccuracies: number;
+  blackInaccuracies: number;
+  whiteMistakes: number;
+  blackMistakes: number;
   whiteBlunders: number;
   blackBlunders: number;
 }
