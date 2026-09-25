@@ -1,19 +1,20 @@
 /**
- * Lightweight On-Demand Lichess Opening Explorer Client & Cache
+ * Lightweight On-Demand Lichess Masters Opening Explorer Client & Cache
  * 
- * Requests ONLY the aggregated move counts for the currently selected FEN on demand.
+ * Correctly targets: https://explorer.lichess.ovh/masters
+ * Requests ONLY the aggregated move counts for the currently selected exact FEN on demand.
  * Does NOT download or store any game database in the browser.
  * Includes:
- * - Request cancellation (AbortController)
- * - FEN-keyed LRU cache
- * - Rate-limit (HTTP 429) handling
- * - Automatic circuit-breaker / temporary cooldown on failures
- * - Local opening name detection fallback when offline
+ * - Request cancellation (AbortController) on position change
+ * - Exact FEN-keyed LRU cache
+ * - Request timeout and graceful error handling
+ * - Clean opening detection fallback
+ * - Decoupled from Stockfish analysis
  */
 
-import { detectOpening } from './openings';
+import { getOpeningFromFen } from './openings';
 
-export type ExplorerDatabase = 'lichess' | 'masters';
+export type ExplorerDatabase = 'masters';
 
 export interface LichessExplorerMove {
   uci: string;
@@ -30,7 +31,7 @@ export interface LichessExplorerMove {
 
 export interface LichessExplorerResult {
   fen: string;
-  database: ExplorerDatabase;
+  database: 'masters';
   totalGames: number;
   whiteTotal: number;
   drawsTotal: number;
@@ -41,143 +42,99 @@ export interface LichessExplorerResult {
   } | null;
   moves: LichessExplorerMove[];
   isCached?: boolean;
+  hasLichessData: boolean;
 }
+
+export type LichessData = LichessExplorerResult;
 
 export interface ExplorerResponse {
-  status: 'success' | 'rate_limited' | 'error' | 'disabled';
+  status: 'success' | 'no_data' | 'error';
   data?: LichessExplorerResult;
   message?: string;
-  cooldownSeconds?: number;
 }
 
-// In-memory bounded cache for visited positions only (max 100 small objects)
+// In-memory bounded cache for visited positions only (keyed by exact FEN)
 const fenCache = new Map<string, LichessExplorerResult>();
-const MAX_CACHE_SIZE = 100;
+const MAX_CACHE_SIZE = 150;
 
-// Circuit breaker state to protect against spamming failed or rate-limited endpoints
-let disabledUntilTimestamp: number = 0;
-let consecutiveFailures: number = 0;
+// Active AbortController for in-flight request cancellation
 let activeAbortController: AbortController | null = null;
 
 /**
- * Normalizes FEN for opening explorer lookup (pieces, side-to-move, castling, en-passant)
- */
-export function normalizeOpeningFen(fen: string): string {
-  if (!fen) return '';
-  const parts = fen.trim().split(/\s+/);
-  if (parts.length < 4) return fen.trim();
-  // Return standard 6-part FEN with zeroed counters for opening transposition
-  return `${parts[0]} ${parts[1]} ${parts[2]} ${parts[3]} 0 1`;
-}
-
-/**
- * Checks if Lichess requests are currently in a cooldown period
- */
-export function getLichessCooldown(): number {
-  const now = Date.now();
-  if (now < disabledUntilTimestamp) {
-    return Math.ceil((disabledUntilTimestamp - now) / 1000);
-  }
-  return 0;
-}
-
-/**
- * Manually resets the circuit breaker
- */
-export function resetLichessCircuitBreaker(): void {
-  disabledUntilTimestamp = 0;
-  consecutiveFailures = 0;
-}
-
-/**
- * Fetches lightweight on-demand statistics for a single FEN position
+ * Fetches lightweight on-demand statistics for a single exact FEN position from Lichess Masters Explorer
  */
 export async function fetchLichessOpeningStats(
-  fen: string,
-  database: ExplorerDatabase = 'lichess'
+  fen: string
 ): Promise<ExplorerResponse> {
-  const normalizedFen = normalizeOpeningFen(fen);
-  if (!normalizedFen) {
+  const cleanFen = fen?.trim() || '';
+  if (!cleanFen) {
     return { status: 'error', message: 'Invalid FEN' };
   }
 
-  const cacheKey = `${database}:${normalizedFen}`;
-
-  // 1. Check in-memory cache first
-  if (fenCache.has(cacheKey)) {
+  // 1. Check in-memory cache first to avoid repeat requests
+  if (fenCache.has(cleanFen)) {
+    const cached = fenCache.get(cleanFen)!;
     return {
       status: 'success',
-      data: { ...fenCache.get(cacheKey)!, isCached: true },
+      data: { ...cached, isCached: true },
     };
   }
 
-  // 2. Check if circuit breaker is active
-  const cooldown = getLichessCooldown();
-  if (cooldown > 0) {
-    return {
-      status: 'disabled',
-      message: `Lichess database temporarily paused (${cooldown}s cooldown remaining). Stockfish analysis remains active.`,
-      cooldownSeconds: cooldown,
-    };
-  }
-
-  // 3. Cancel any previous in-flight network request
+  // 2. Cancel any previous in-flight network request when moves change
   if (activeAbortController) {
     try {
       activeAbortController.abort();
     } catch {}
+    activeAbortController = null;
   }
   activeAbortController = new AbortController();
   const signal = activeAbortController.signal;
 
-  // 4. Build small on-demand query (topGames=0 to avoid downloading unnecessary payload)
-  const encodedFen = encodeURIComponent(normalizedFen);
-  const endpoint =
-    database === 'masters'
-      ? `https://explorer.lichess.ovh/masters?fen=${encodedFen}&moves=12&topGames=0`
-      : `https://explorer.lichess.ovh/lichess?fen=${encodedFen}&ratings=1600,1800,2000,2200,2500&speeds=blitz,rapid,classical&moves=12&topGames=0`;
+  // 3. Build small on-demand query for Masters Opening Explorer using exact FEN
+  const encodedFen = encodeURIComponent(cleanFen);
+  const endpoint = `https://explorer.lichess.ovh/masters?fen=${encodedFen}&moves=12&topGames=0`;
 
-  // Set a 4s request timeout
-  const timeoutId = setTimeout(() => {
-    if (activeAbortController) {
-      activeAbortController.abort();
-    }
-  }, 4000);
+  // Optional authentication token if configured by user or environment
+  const token = typeof window !== 'undefined'
+    ? (localStorage.getItem('lichess_token') || (window as any).LICHESS_TOKEN || (import.meta as any).env?.VITE_LICHESS_TOKEN)
+    : null;
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+  if (token && typeof token === 'string' && token.trim()) {
+    headers['Authorization'] = `Bearer ${token.trim()}`;
+  }
+
+  // 4. Set a 3.5s request timeout
+  let timeoutId: any = null;
+  const timeoutPromise = new Promise<{ isTimeout: boolean }>((resolve) => {
+    timeoutId = setTimeout(() => resolve({ isTimeout: true }), 3500);
+  });
 
   try {
-    const response = await fetch(endpoint, {
+    const fetchPromise = fetch(endpoint, {
       signal,
-      headers: {
-        Accept: 'application/json',
-      },
-    });
+      headers,
+    }).then(async (res) => ({ res, isTimeout: false }));
 
-    clearTimeout(timeoutId);
+    const racedResult = await Promise.race([fetchPromise, timeoutPromise]);
+    if (timeoutId) clearTimeout(timeoutId);
 
-    // Handle Rate Limiting (HTTP 429)
-    if (response.status === 429) {
-      consecutiveFailures++;
-      disabledUntilTimestamp = Date.now() + 60000; // 60s cooldown
-      return {
-        status: 'rate_limited',
-        message: 'Lichess API rate limit reached. Pausing explorer requests for 60 seconds.',
-        cooldownSeconds: 60,
-      };
+    if (racedResult.isTimeout) {
+      if (activeAbortController) {
+        activeAbortController.abort();
+      }
+      return handleNoLichessDataFallback(cleanFen, 'Request timed out');
     }
 
+    const response = (racedResult as any).res as Response;
+
     if (!response.ok) {
-      consecutiveFailures++;
-      if (consecutiveFailures >= 3) {
-        disabledUntilTimestamp = Date.now() + 30000; // 30s cooldown on repeated failures
-      }
-      return {
-        status: 'error',
-        message: `Lichess server returned status ${response.status}`,
-      };
+      return handleNoLichessDataFallback(cleanFen, `HTTP ${response.status}`);
     }
 
     const data = await response.json();
-    consecutiveFailures = 0; // Reset failure count on success
 
     const whiteTotal = Number(data.white || 0);
     const drawsTotal = Number(data.draws || 0);
@@ -218,48 +175,89 @@ export async function fetchLichessOpeningStats(
     // Sort moves descending by total games count
     moves.sort((a, b) => b.totalGames - a.totalGames);
 
+    // Resolve opening name/ECO: Prefer Lichess returned opening, fallback to local opening database
+    let parsedOpening = data.opening && data.opening.name
+      ? {
+          eco: data.opening.eco || '',
+          name: data.opening.name || '',
+        }
+      : null;
+
+    if (!parsedOpening) {
+      const localOp = getOpeningFromFen(cleanFen);
+      if (localOp) {
+        parsedOpening = { eco: localOp.eco, name: localOp.name };
+      }
+    }
+
     const result: LichessExplorerResult = {
-      fen: normalizedFen,
-      database,
+      fen: cleanFen,
+      database: 'masters',
       totalGames,
       whiteTotal,
       drawsTotal,
       blackTotal,
-      opening: data.opening
-        ? {
-            eco: data.opening.eco || '',
-            name: data.opening.name || '',
-          }
-        : null,
+      opening: parsedOpening,
       moves,
+      hasLichessData: totalGames > 0 || moves.length > 0,
     };
 
     // Store in bounded cache
-    if (fenCache.size >= MAX_CACHE_SIZE) {
-      const firstKey = fenCache.keys().next().value;
-      if (firstKey) fenCache.delete(firstKey);
-    }
-    fenCache.set(cacheKey, result);
+    storeInCache(cleanFen, result);
 
     return {
       status: 'success',
       data: result,
     };
   } catch (err: any) {
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
     if (err?.name === 'AbortError') {
-      // Intentionally aborted due to position change or timeout
       return { status: 'error', message: 'Request cancelled' };
     }
 
-    consecutiveFailures++;
-    if (consecutiveFailures >= 3) {
-      disabledUntilTimestamp = Date.now() + 30000; // 30s cooldown
-    }
-
-    return {
-      status: 'error',
-      message: 'Network or connectivity issue reaching Lichess',
-    };
+    return handleNoLichessDataFallback(cleanFen, err?.message || 'Network error');
   }
+}
+
+/**
+ * Alias for fetchLichessOpeningStats
+ */
+export const fetchLichessData = fetchLichessOpeningStats;
+
+/**
+ * Graceful fallback when Lichess API returns non-200 or is unreachable.
+ * Never throws an error or breaks the UI; retrieves opening name/ECO from local book
+ * and marks hasLichessData as false so UI displays "No opening data".
+ */
+function handleNoLichessDataFallback(cleanFen: string, reason: string): ExplorerResponse {
+  const localOp = getOpeningFromFen(cleanFen);
+  const parsedOpening = localOp ? { eco: localOp.eco, name: localOp.name } : null;
+
+  const fallbackResult: LichessExplorerResult = {
+    fen: cleanFen,
+    database: 'masters',
+    totalGames: 0,
+    whiteTotal: 0,
+    drawsTotal: 0,
+    blackTotal: 0,
+    opening: parsedOpening,
+    moves: [],
+    hasLichessData: false,
+  };
+
+  // Cache to avoid repeat requests on the same position
+  storeInCache(cleanFen, fallbackResult);
+
+  return {
+    status: 'success',
+    data: fallbackResult,
+  };
+}
+
+function storeInCache(fen: string, result: LichessExplorerResult) {
+  if (fenCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = fenCache.keys().next().value;
+    if (firstKey) fenCache.delete(firstKey);
+  }
+  fenCache.set(fen, result);
 }

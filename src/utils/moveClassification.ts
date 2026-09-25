@@ -305,27 +305,22 @@ export function classifyEngineMove(
     ...options?.customThresholds,
   };
 
-  // Convert scores to active player's perspective (positive = good for active player)
+  // Evaluations are in White's perspective (+ = White advantage, - = Black advantage).
+  // Calculate evaluation loss strictly from the perspective of the player who made the move:
+  // - For White: loss = evalBefore - evalAfter
+  // - For Black: loss = evalAfter - evalBefore
   const turn = moveResult.color;
   const isWhite = turn === 'w';
+  const rawLoss = isWhite
+    ? (bestMoveScore - playedMoveScore)
+    : (playedMoveScore - bestMoveScore);
+  const evalLoss = Math.max(0, rawLoss);
+
   const userEvalBefore = isWhite ? bestMoveScore : -bestMoveScore;
   const userEvalAfter = isWhite ? playedMoveScore : -playedMoveScore;
 
-  // True centipawn loss (how much of the best evaluation was lost by playing this move)
-  const evalLoss = Math.max(0, userEvalBefore - userEvalAfter);
   const isTopMove = bestMoveSan ? bestMoveSan === moveResult.san : false;
   const accuracy = calculateMoveAccuracy(evalLoss, isTopMove);
-
-  // 0. Book opening move check
-  if (options?.isBookOpeningMove) {
-    return {
-      classification: 'book',
-      commentary: 'Established opening theory.',
-      sign: MOVE_QUALITY_SIGNS.book,
-      evalLoss: 0,
-      accuracy: 100,
-    };
-  }
 
   // 1. Check strict Brilliant conditions first (sacrifices, quiet winning moves)
   const brilliantCheck = evaluateBrilliantCriteria(

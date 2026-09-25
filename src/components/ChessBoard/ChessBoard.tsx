@@ -3,6 +3,7 @@ import { Chess, Square, PieceSymbol, Color } from 'chess.js';
 import { PieceColor, PieceType, MoveClassification } from '../../types/chess';
 import { PieceIcon } from './PieceIcon';
 import { MOVE_QUALITY_SIGNS } from '../../utils/moveClassification';
+import { MoveMark } from './MoveMark';
 
 interface ChessBoardProps {
   chess: Chess;
@@ -426,18 +427,11 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
                 })()}
 
                 {/* Move Quality Badge on Destination Square */}
-                {isLastMoveTo && moveQualityClassification && (() => {
-                  const qSign = MOVE_QUALITY_SIGNS[moveQualityClassification];
-                  if (!qSign) return null;
-                  return (
-                    <div
-                      className={`absolute top-0.5 right-0.5 z-40 px-1 py-0.2 rounded-md font-mono font-black text-[9px] sm:text-[10px] leading-tight border shadow-md animate-in zoom-in-75 duration-150 select-none pointer-events-none ${qSign.badgeBg} ${qSign.badgeText} ${qSign.badgeBorder} ${qSign.glowColor}`}
-                      title={`${qSign.label} (${qSign.symbol})`}
-                    >
-                      {qSign.symbol}
-                    </div>
-                  );
-                })()}
+                {isLastMoveTo && moveQualityClassification && (
+                  <div className="absolute -top-1.5 -right-1.5 z-40 animate-in zoom-in-75 duration-150 select-none pointer-events-none drop-shadow-md">
+                    <MoveMark classification={moveQualityClassification} size={28} showGlow />
+                  </div>
+                )}
               </div>
             );
           });

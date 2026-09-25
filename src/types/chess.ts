@@ -40,10 +40,17 @@ export interface AnalyzedMove {
   captured?: PieceType;
   promotion?: PieceType;
   fen: string;
-  eval: number; // centipawns or large number for mate
+  eval: number; // centipawns / 100 or mate score from White's perspective
+  evalBefore?: number;
+  evalLoss?: number;
   bestMoveSan?: string;
+  bestMove?: { from: string; to: string; promotion?: string };
+  depth?: number;
+  mate?: number;
   classification?: MoveClassification;
   commentary?: string;
+  isBookMove?: boolean;
+  openingName?: string;
   timeSpentSeconds?: number;
 }
 

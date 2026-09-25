@@ -400,25 +400,24 @@ export function analyzeMatch(
     const playedMoveSearch = minimax(sim, 2, -Infinity, Infinity, sim.turn() === 'w');
     const playedMoveScore = playedMoveSearch.score; // Centipawns from White's perspective
 
-    // 3. Check for standard opening theory in first 10 moves
-    const isBookMove = moveNumber <= 10 && Boolean(detectOpening(sanHistory));
+    // 3. Check for standard opening theory in opening phase
+    const openingInfo = moveNumber <= 15 ? detectOpening(sanHistory) : undefined;
+    const isBookMove = Boolean(openingInfo);
 
-    // 4. Classify move with real engine rules, searched evaluations & context scaling
+    // 4. Classify move with real engine rules & searched evaluations (Stockfish rules, never overridden by book)
     const { classification, commentary, evalLoss, accuracy } = classifyEngineMove(
       beforeClone,
       moveResult,
       bestMoveScore,
       playedMoveScore,
       bestMoveSan,
-      moveNumber,
-      isBookMove ? { isBookOpeningMove: true } : undefined
+      moveNumber
     );
 
     // Track classification counts
     if (turn === 'w') {
       if (classification === 'brilliant') whiteBrilliants++;
-      else if (classification === 'great') whiteBests++;
-      else if (classification === 'best' || classification === 'book') whiteBests++;
+      else if (classification === 'great' || classification === 'best') whiteBests++;
       else if (classification === 'excellent') whiteExcellents++;
       else if (classification === 'good') whiteGoods++;
       else if (classification === 'inaccuracy') whiteInaccuracies++;
@@ -426,8 +425,7 @@ export function analyzeMatch(
       else if (classification === 'blunder' || classification === 'missed_win') whiteBlunders++;
     } else {
       if (classification === 'brilliant') blackBrilliants++;
-      else if (classification === 'great') blackBests++;
-      else if (classification === 'best' || classification === 'book') blackBests++;
+      else if (classification === 'great' || classification === 'best') blackBests++;
       else if (classification === 'excellent') blackExcellents++;
       else if (classification === 'good') blackGoods++;
       else if (classification === 'inaccuracy') blackInaccuracies++;
@@ -455,8 +453,12 @@ export function analyzeMatch(
       promotion: moveResult.promotion as PieceType | undefined,
       fen: sim.fen(),
       eval: +(playedMoveScore / 100).toFixed(2),
+      evalBefore: +(bestMoveScore / 100).toFixed(2),
+      evalLoss: +(evalLoss / 100).toFixed(2),
       bestMoveSan,
       classification,
+      isBookMove,
+      openingName: openingInfo?.name,
       commentary,
     });
   }

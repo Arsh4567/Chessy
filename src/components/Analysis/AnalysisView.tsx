@@ -11,6 +11,7 @@ import { detectOpening } from '../../utils/openings';
 import { sound } from '../../utils/sound';
 import { stockfish, StockfishEvaluation, formatPvToSan } from '../../utils/stockfishWorker';
 import { MOVE_QUALITY_SIGNS } from '../../utils/moveClassification';
+import { MoveMark } from '../ChessBoard/MoveMark';
 import { 
   Copy, 
   Upload, 
@@ -59,8 +60,36 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   });
   const [isEngineEvaluating, setIsEngineEvaluating] = useState<boolean>(false);
   const [analysisProgress, setAnalysisProgress] = useState<number>(100);
-  const [isProgressivelyAnalyzing, setIsProgressivelyAnalyzing] = useState<boolean>(false);
+  const [isProgressivelyAnalyzing, setIsProgressivelyAnalyzing] = useState<boolean>(() => {
+    return Boolean(initialPgn?.trim() || (initialMoves && initialMoves.length > 0));
+  });
   const analysisControllerRef = useRef<ProgressiveAnalysisController | null>(null);
+
+  // Update evaluation bar instantly from analyzed move data when stepping through positions
+  useEffect(() => {
+    if (currentMoveIdx >= 0 && analyzedData?.analyzedMoves[currentMoveIdx]) {
+      const move = analyzedData.analyzedMoves[currentMoveIdx];
+      const cp = Math.round(move.eval * 100);
+      setStockfishEval((prev) => ({
+        ...prev,
+        scoreCp: cp,
+        evalPawns: move.eval,
+        depth: move.depth || prev.depth || 16,
+        mate: move.mate,
+        displayEval: move.mate !== undefined
+          ? (move.mate > 0 ? `M${move.mate}` : `-M${Math.abs(move.mate)}`)
+          : (move.eval >= 0 ? `+${move.eval.toFixed(2)}` : move.eval.toFixed(2)),
+        bestMove: move.bestMove || prev.bestMove,
+      }));
+    } else if (currentMoveIdx === -1) {
+      setStockfishEval((prev) => ({
+        ...prev,
+        scoreCp: 0,
+        evalPawns: 0,
+        displayEval: '0.00',
+      }));
+    }
+  }, [currentMoveIdx, analyzedData]);
 
   // Continuous Live Stockfish Engine Evaluation for currently selected position (when idle or progressive analysis is complete)
   useEffect(() => {
@@ -113,15 +142,18 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     
     // Extract verified moves for both initial render and background evaluation
     let movesToAnalyze = rawMoves;
-    if (rawPgn && rawMoves.length === 0) {
+    if (rawPgn) {
       try {
         const temp = new Chess();
         temp.loadPgn(rawPgn);
-        movesToAnalyze = temp.history({ verbose: true }).map((h) => ({
+        const parsed = temp.history({ verbose: true }).map((h) => ({
           from: h.from,
           to: h.to,
           promotion: h.promotion,
         }));
+        if (parsed.length > 0) {
+          movesToAnalyze = parsed;
+        }
       } catch (err) {
         console.warn('PGN parse warning:', err);
       }
@@ -135,11 +167,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     setAnalyzedData(instantResult);
 
     if (instantResult.analyzedMoves.length > 0) {
-      const lastIdx = instantResult.analyzedMoves.length - 1;
-      const targetFen = instantResult.analyzedMoves[lastIdx]?.fen;
-      if (targetFen) {
-        setChess(new Chess(targetFen));
-        setCurrentMoveIdx(lastIdx);
+      const firstFen = instantResult.analyzedMoves[0]?.fen;
+      if (firstFen) {
+        setChess(new Chess(firstFen));
+        setCurrentMoveIdx(0);
       }
     } else {
       setChess(new Chess());
@@ -149,18 +180,18 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     if (movesToAnalyze.length === 0) {
       setIsProgressivelyAnalyzing(false);
       setAnalysisProgress(100);
-      return;
+      return null;
     }
 
     setIsProgressivelyAnalyzing(true);
     setAnalysisProgress(5);
 
-    // 4. Launch non-blocking background analysis (max 8-10s budget, yields to UI thread)
+    // 4. Launch non-blocking background analysis with deep engine evaluation
     const controller = analyzeGameProgressively(
       movesToAnalyze,
       rawPgn || undefined,
       currentKey,
-      (updatedGame, _currentMoveIdx, progressPercent) => {
+      (updatedGame, currentIdx, progressPercent) => {
         setAnalyzedData(updatedGame);
         setAnalysisProgress(progressPercent);
       },
@@ -169,36 +200,31 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
         setAnalysisProgress(100);
         setIsProgressivelyAnalyzing(false);
       },
-      { maxBudgetMs: 8000 }
+      { stockfishDepth: 16, movetimeMs: 150, maxBudgetMs: 45000 }
     );
 
     analysisControllerRef.current = controller;
+    return controller;
   }, []);
 
-  // Cleanup background analysis on unmount
+  const movesSignature = useMemo(() => {
+    return initialMoves.map((m) => `${m.from}-${m.to}${m.promotion || ''}`).join(',');
+  }, [initialMoves]);
+
+  const pgnSignature = initialPgn?.trim() || '';
+
+  // Initialize or re-analyze game safely when PGN or moves change
   useEffect(() => {
+    if (!pgnSignature && !movesSignature) return;
+
+    const controller = startProgressiveGameAnalysis(initialMoves, pgnSignature);
+
     return () => {
-      if (analysisControllerRef.current) {
-        analysisControllerRef.current.abort();
+      if (controller) {
+        controller.abort();
       }
     };
-  }, []);
-
-  // Initialize or re-analyze game safely without blocking main thread
-  const initializedKeyRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const rawPgn = initialPgn?.trim() || '';
-    const movesKey = initialMoves.map((m) => `${m.from}-${m.to}`).join(',');
-    const currentKey = `${rawPgn}::${movesKey}`;
-
-    if (initializedKeyRef.current === currentKey) {
-      return;
-    }
-    initializedKeyRef.current = currentKey;
-
-    startProgressiveGameAnalysis(initialMoves, rawPgn);
-  }, [initialMoves, initialPgn, startProgressiveGameAnalysis]);
+  }, [pgnSignature, movesSignature, startProgressiveGameAnalysis]);
 
   const jumpToMove = (index: number, movesList?: AnalyzedMove[]) => {
     try {
@@ -403,28 +429,28 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
               <div className="text-xl font-mono font-black text-slate-100">{analyzedData.blackAccuracy}%</div>
             </div>
             <div className="text-center p-2 rounded-xl bg-slate-950/60">
-              <div className="text-[10px] text-cyan-400 uppercase font-semibold flex items-center justify-center gap-1">
+              <div className="text-[10px] text-cyan-400 uppercase font-semibold flex items-center justify-center gap-1.5">
+                <MoveMark classification="brilliant" size={18} />
                 <span>Brilliant</span>
-                <span className="font-mono font-black text-xs px-1 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">!!</span>
               </div>
-              <div className="text-xl font-mono font-black text-cyan-400">
+              <div className="text-xl font-mono font-black text-cyan-400 mt-0.5">
                 {analyzedData.whiteBrilliants + analyzedData.blackBrilliants}
               </div>
             </div>
             <div className="text-center p-2 rounded-xl bg-slate-950/60">
-              <div className="text-[10px] text-rose-400 uppercase font-semibold flex items-center justify-center gap-1">
+              <div className="text-[10px] text-rose-400 uppercase font-semibold flex items-center justify-center gap-1.5">
+                <MoveMark classification="blunder" size={18} />
                 <span>Blunders</span>
-                <span className="font-mono font-black text-xs px-1 rounded bg-rose-500/20 text-rose-300 border border-rose-400/40">??</span>
               </div>
-              <div className="text-xl font-mono font-black text-rose-400">
+              <div className="text-xl font-mono font-black text-rose-400 mt-0.5">
                 {analyzedData.whiteBlunders + analyzedData.blackBlunders}
               </div>
             </div>
           </div>
 
           {/* Detailed Quality Signs Filter Pills */}
-          <div className="flex items-center gap-1.5 flex-wrap bg-slate-900/60 border border-slate-800/80 p-2 rounded-2xl text-xs">
-            <span className="text-[11px] font-bold text-slate-400 px-2">Move Quality Signs:</span>
+          <div className="flex items-center gap-2 flex-wrap bg-slate-900/60 border border-slate-800/80 p-2.5 rounded-2xl text-xs">
+            <span className="text-[11px] font-bold text-slate-400 px-1">Move Quality Signs:</span>
             
             {/* Brilliant !! */}
             <button
@@ -438,9 +464,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                   if (firstIdx !== -1) jumpToMove(firstIdx);
                 }
               }}
-              className="px-2.5 py-1 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-slate-950/70 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/15 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
-              <span className="font-mono font-black text-[11px]">!!</span>
+              <MoveMark classification="brilliant" size={20} />
               <span className="font-semibold">Brilliant</span>
               <span className="font-mono bg-cyan-950 px-1.5 py-0.2 rounded text-[10px] text-cyan-300">
                 {analyzedData.whiteBrilliants + analyzedData.blackBrilliants}
@@ -459,9 +485,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                   if (firstIdx !== -1) jumpToMove(firstIdx);
                 }
               }}
-              className="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-slate-950/70 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/15 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
-              <span className="font-mono font-black text-[11px]">!</span>
+              <MoveMark classification="best" size={20} />
               <span className="font-semibold">Best</span>
               <span className="font-mono bg-emerald-950 px-1.5 py-0.2 rounded text-[10px] text-emerald-300">
                 {analyzedData.whiteBests + analyzedData.blackBests}
@@ -480,9 +506,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                   if (firstIdx !== -1) jumpToMove(firstIdx);
                 }
               }}
-              className="px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-slate-950/70 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
-              <span className="font-mono font-black text-[11px]">★</span>
+              <MoveMark classification="excellent" size={20} />
               <span className="font-semibold">Excellent</span>
               <span className="font-mono bg-emerald-950 px-1.5 py-0.2 rounded text-[10px] text-emerald-400">
                 {analyzedData.whiteExcellents + analyzedData.blackExcellents}
@@ -501,9 +527,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                   if (firstIdx !== -1) jumpToMove(firstIdx);
                 }
               }}
-              className="px-2.5 py-1 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-300 hover:bg-blue-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-slate-950/70 border border-blue-500/30 text-blue-300 hover:bg-blue-500/15 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
-              <span className="font-mono font-black text-[11px]">✓</span>
+              <MoveMark classification="good" size={20} />
               <span className="font-semibold">Good</span>
               <span className="font-mono bg-blue-950 px-1.5 py-0.2 rounded text-[10px] text-blue-300">
                 {analyzedData.whiteGoods + analyzedData.blackGoods}
@@ -522,9 +548,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                   if (firstIdx !== -1) jumpToMove(firstIdx);
                 }
               }}
-              className="px-2.5 py-1 rounded-xl bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 hover:bg-yellow-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-slate-950/70 border border-yellow-500/30 text-yellow-300 hover:bg-yellow-500/15 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
-              <span className="font-mono font-black text-[11px]">?!</span>
+              <MoveMark classification="inaccuracy" size={20} />
               <span className="font-semibold">Inaccuracy</span>
               <span className="font-mono bg-yellow-950 px-1.5 py-0.2 rounded text-[10px] text-yellow-300">
                 {analyzedData.whiteInaccuracies + analyzedData.blackInaccuracies}
@@ -543,9 +569,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                   if (firstIdx !== -1) jumpToMove(firstIdx);
                 }
               }}
-              className="px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-slate-950/70 border border-amber-500/30 text-amber-300 hover:bg-amber-500/15 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
-              <span className="font-mono font-black text-[11px]">?</span>
+              <MoveMark classification="mistake" size={20} />
               <span className="font-semibold">Mistake</span>
               <span className="font-mono bg-amber-950 px-1.5 py-0.2 rounded text-[10px] text-amber-300">
                 {analyzedData.whiteMistakes + analyzedData.blackMistakes}
@@ -564,9 +590,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                   if (firstIdx !== -1) jumpToMove(firstIdx);
                 }
               }}
-              className="px-2.5 py-1 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-2.5 py-1 rounded-xl bg-slate-950/70 border border-rose-500/30 text-rose-300 hover:bg-rose-500/15 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
             >
-              <span className="font-mono font-black text-[11px]">??</span>
+              <MoveMark classification="blunder" size={20} />
               <span className="font-semibold">Blunder</span>
               <span className="font-mono bg-rose-950 px-1.5 py-0.2 rounded text-[10px] text-rose-300">
                 {analyzedData.whiteBlunders + analyzedData.blackBlunders}
@@ -622,8 +648,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
           {/* Current Move Inspector & Engine Quality Card */}
           {currentMove && (
             <div className="w-full max-w-[540px] bg-slate-900/90 border border-slate-800 p-3.5 rounded-2xl space-y-2.5 shadow-xl animate-in fade-in duration-150">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs font-mono font-bold text-slate-400">
                     Move {Math.floor(currentMoveIdx / 2) + 1}
                     {currentMove.color === 'w' ? '.' : '...'}
@@ -632,36 +658,64 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                     {currentMove.san}
                   </span>
 
-                  {/* Move Quality Sign Badge */}
-                  {currentMove.classification && (() => {
-                    const sign = MOVE_QUALITY_SIGNS[currentMove.classification];
-                    if (!sign) return null;
-                    return (
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border font-mono font-black text-xs ${sign.badgeBg} ${sign.badgeText} ${sign.badgeBorder}`}>
-                        <span>{sign.symbol}</span>
-                        <span className="font-sans font-bold text-[11px]">{sign.label}</span>
+                  {/* Move Quality Sign Badge (Stockfish Engine Mark) */}
+                  {currentMove.classification ? (
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-800/90 border border-slate-700 shadow-sm">
+                      <MoveMark classification={currentMove.classification} size={22} showGlow />
+                      <span className="font-sans font-bold text-[11px] text-slate-200 capitalize">
+                        {currentMove.classification}
                       </span>
-                    );
-                  })()}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-slate-800/80 border border-slate-700/80 text-amber-300 text-[11px] font-mono">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                      <span>{isProgressivelyAnalyzing ? 'Analyzing...' : 'Analysis unavailable'}</span>
+                    </div>
+                  )}
+
+                  {/* Separate Informational Theory Badge - only shown when Stockfish analysis is present */}
+                  {currentMove.isBookMove && currentMove.classification && (
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[11px] font-semibold">
+                      <span>📚</span>
+                      <span className="truncate max-w-[160px] sm:max-w-[220px]">
+                        {currentMove.openingName || 'Theory'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => jumpToMove(Math.max(0, currentMoveIdx - 1))}
-                    disabled={currentMoveIdx <= 0}
-                    className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 transition-colors cursor-pointer"
-                    title="Previous move"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => jumpToMove(Math.min((analyzedData?.analyzedMoves.length || 1) - 1, currentMoveIdx + 1))}
-                    disabled={currentMoveIdx >= (analyzedData?.analyzedMoves.length || 0) - 1}
-                    className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 transition-colors cursor-pointer"
-                    title="Next move"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
+                <div className="flex items-center gap-2">
+                  {/* Evaluation Swing: Before -> After */}
+                  {currentMove.evalBefore !== undefined && (
+                    <div className="font-mono text-xs font-bold px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300">
+                      <span className={currentMove.evalBefore >= 0 ? 'text-slate-200' : 'text-slate-400'}>
+                        {currentMove.evalBefore >= 0 ? `+${currentMove.evalBefore.toFixed(2)}` : currentMove.evalBefore.toFixed(2)}
+                      </span>
+                      <span className="text-slate-500 mx-1">→</span>
+                      <span className={currentMove.eval >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                        {currentMove.eval >= 0 ? `+${currentMove.eval.toFixed(2)}` : currentMove.eval.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => jumpToMove(Math.max(0, currentMoveIdx - 1))}
+                      disabled={currentMoveIdx <= 0}
+                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 transition-colors cursor-pointer"
+                      title="Previous move"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => jumpToMove(Math.min((analyzedData?.analyzedMoves.length || 1) - 1, currentMoveIdx + 1))}
+                      disabled={currentMoveIdx >= (analyzedData?.analyzedMoves.length || 0) - 1}
+                      className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 transition-colors cursor-pointer"
+                      title="Next move"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
 

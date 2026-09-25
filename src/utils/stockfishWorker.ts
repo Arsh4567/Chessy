@@ -89,39 +89,76 @@ export class StockfishEngine {
     this.initPromise = new Promise((resolve) => {
       try {
         if (typeof window === 'undefined' || typeof Worker === 'undefined') {
-          this.workerFailed = true;
-          this.isReady = true;
-          resolve(false);
-          return;
-        }
+          // Node.js environment: spawn Stockfish binary for server / testing
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const cp = require('child_process');
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const path = require('path');
+            const scriptPath = path.resolve('./node_modules/stockfish/bin/stockfish-19-lite-single.js');
+            const proc = cp.spawn('node', [scriptPath], { stdio: ['pipe', 'pipe', 'pipe'] });
 
-        // Initialize Web Worker using the Stockfish script with explicit wasm target
-        this.worker = new Worker('/stockfish-19-lite-single.js#/stockfish-19-lite-single.wasm');
+            proc.stdout.on('data', (d: Buffer) => {
+              this.handleWorkerMessage(d.toString());
+            });
+            proc.stderr.on('data', (d: Buffer) => {
+              console.warn('[Stockfish stderr]:', d.toString());
+            });
+            proc.on('error', (err: any) => {
+              console.warn('[Stockfish proc error]:', err);
+              this.workerFailed = true;
+              this.isReady = true;
+            });
 
-        this.worker.onmessage = (event: MessageEvent) => {
-          this.handleWorkerMessage(String(event.data || ''));
-        };
-
-        this.worker.onerror = (err: ErrorEvent) => {
-          if (err && typeof err.preventDefault === 'function') {
-            err.preventDefault();
+            this.worker = {
+              postMessage: (cmd: string) => {
+                try {
+                  proc.stdin.write(cmd + '\n');
+                } catch (e) {
+                  console.warn('Error writing to stockfish proc:', e);
+                }
+              },
+              terminate: () => {
+                try {
+                  proc.kill();
+                } catch {}
+              },
+            } as any;
+          } catch {
+            this.workerFailed = true;
+            this.isReady = true;
+            resolve(false);
+            return;
           }
-          console.warn('[Stockfish] Worker error trapped, switching safely to heuristic fallback:', err?.message || err);
-          this.workerFailed = true;
-          this.isReady = true;
-          this.isSearching = false;
-        };
+        } else {
+          // Browser environment: Web Worker with Stockfish WebAssembly
+          this.worker = new Worker('/stockfish-19-lite-single.js#/stockfish-19-lite-single.wasm');
+
+          this.worker.onmessage = (event: MessageEvent) => {
+            this.handleWorkerMessage(String(event.data || ''));
+          };
+
+          this.worker.onerror = (err: ErrorEvent) => {
+            if (err && typeof err.preventDefault === 'function') {
+              err.preventDefault();
+            }
+            console.warn('[Stockfish] Worker error trapped, switching safely to heuristic fallback:', err?.message || err);
+            this.workerFailed = true;
+            this.isReady = true;
+            this.isSearching = false;
+          };
+        }
 
         // Send UCI handshake
         this.sendCommand('uci');
         this.sendCommand('isready');
 
-        // Check ready callback with 2000ms timeout
+        // Check ready callback with 4000ms timeout
         const readyTimeout = setTimeout(() => {
           this.isReady = true;
           this.isInitializing = false;
           resolve(true);
-        }, 2000);
+        }, 4000);
 
         const onFirstReady = (line: string) => {
           if (line.includes('readyok') || line.includes('uciok')) {
@@ -149,6 +186,34 @@ export class StockfishEngine {
     return this.init();
   }
 
+  public async waitReady(timeoutMs: number = 2000): Promise<boolean> {
+    if (!this.worker || this.workerFailed) return false;
+    return new Promise<boolean>((resolve) => {
+      let resolved = false;
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          this.rawListeners = this.rawListeners.filter((l) => l !== onLine);
+          resolve(true);
+        }
+      }, timeoutMs);
+
+      const onLine = (line: string) => {
+        if (line.includes('readyok')) {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            this.rawListeners = this.rawListeners.filter((l) => l !== onLine);
+            resolve(true);
+          }
+        }
+      };
+
+      this.rawListeners.push(onLine);
+      this.sendCommand('isready');
+    });
+  }
+
   public addRawListener(cb: (line: string) => void) {
     this.rawListeners.push(cb);
   }
@@ -163,6 +228,11 @@ export class StockfishEngine {
   public sendCommand(cmd: string) {
     if (this.worker && !this.workerFailed) {
       try {
+        if (cmd.startsWith('position fen')) {
+          console.log('[Stockfish Engine] SENDING FEN:', cmd.slice(13).trim());
+        } else {
+          console.log('[Stockfish Engine] SENDING COMMAND:', cmd);
+        }
         this.worker.postMessage(cmd);
       } catch (err) {
         console.warn('Error sending command to Stockfish worker:', err);
@@ -171,34 +241,17 @@ export class StockfishEngine {
   }
 
   public async stopActiveSearch(): Promise<void> {
-    if (!this.isSearching || !this.worker || this.workerFailed) {
+    if (!this.worker || this.workerFailed) {
       this.isSearching = false;
       return;
     }
 
-    return new Promise<void>((resolve) => {
-      let settled = false;
-      const finish = () => {
-        if (!settled) {
-          settled = true;
-          this.isSearching = false;
-          this.rawListeners = this.rawListeners.filter((l) => l !== onMoveOrReady);
-          resolve();
-        }
-      };
-
-      const timer = setTimeout(finish, 200);
-
-      const onMoveOrReady = (line: string) => {
-        if (line.startsWith('bestmove') || line.includes('readyok')) {
-          clearTimeout(timer);
-          finish();
-        }
-      };
-
-      this.rawListeners.push(onMoveOrReady);
+    if (this.isSearching) {
       this.sendCommand('stop');
-    });
+      this.isSearching = false;
+      // Synchronize engine state so all pending search messages are flushed
+      await this.waitReady(500);
+    }
   }
 
   private handleWorkerMessage(messageData: string) {
@@ -227,6 +280,7 @@ export class StockfishEngine {
 
       // Parse engine evaluation info
       if (line.startsWith('info') && line.includes('score')) {
+        console.log('[Stockfish Engine] INFO RESPONSE RECEIVED:', line);
         const parsed = this.parseInfoLine(line);
         if (parsed) {
           this.latestEval = parsed;
@@ -498,8 +552,13 @@ export class StockfishEngine {
 
   /**
    * Evaluates a position with Stockfish with guaranteed serialization and fallback
+   * Supports deep search (depth 16-24) with optional movetime budget.
    */
-  public async evaluatePosition(fen: string, depth: number = 10): Promise<StockfishEvaluation> {
+  public async evaluatePosition(
+    fen: string,
+    depth: number = 16,
+    movetimeMs?: number
+  ): Promise<StockfishEvaluation> {
     const cleanFen = fen.trim();
 
     const run = async (): Promise<StockfishEvaluation> => {
@@ -516,32 +575,77 @@ export class StockfishEngine {
         const parts = cleanFen.split(/\s+/);
         this.currentSideToMove = parts.length > 1 && parts[1] === 'b' ? 'b' : 'w';
 
-        // Reset latestEval baseline for this specific FEN
+        console.log('[Stockfish Engine] EVALUATING FEN INPUT:', cleanFen, '| depth:', depth, '| movetimeMs:', movetimeMs);
+
+        // Check if position is game over first
+        try {
+          const c = new Chess(cleanFen);
+          if (c.isGameOver()) {
+            const fallback = this.computeFallbackEval(cleanFen);
+            console.log('[Stockfish Engine] Game over position detected, returning terminal eval:', fallback);
+            return fallback;
+          }
+        } catch {}
+
         const initialFallback = this.computeFallbackEval(cleanFen);
-        this.latestEval = {
+        let accumulatedEval: StockfishEvaluation = {
           ...initialFallback,
           depth: 0,
         };
 
         return await new Promise<StockfishEvaluation>((resolve) => {
           this.isSearching = true;
+          let settled = false;
+          const maxWait = movetimeMs ? Math.max(movetimeMs + 1000, 3000) : 4000;
 
-          const timer = setTimeout(async () => {
-            if (this.currentEvalResolve === resolve) {
-              await this.stopActiveSearch();
-              const fallback = this.latestEval.depth > 0 ? this.latestEval : this.computeFallbackEval(cleanFen);
-              resolve(fallback);
+          const finish = (result: StockfishEvaluation) => {
+            if (!settled) {
+              settled = true;
+              clearTimeout(timer);
+              this.isSearching = false;
+              this.currentEvalResolve = null;
+              this.rawListeners = this.rawListeners.filter((l) => l !== onLine);
+              console.log('[Stockfish Engine] EVALUATION RESOLVED FOR FEN:', cleanFen, {
+                depth: result.depth,
+                scoreCp: result.scoreCp,
+                evalPawns: result.evalPawns,
+                displayEval: result.displayEval,
+                bestMove: result.bestMove?.rawUci,
+              });
+              resolve(result);
             }
-          }, 3500);
-
-          this.currentEvalResolve = (evalResult) => {
-            clearTimeout(timer);
-            this.isSearching = false;
-            resolve(evalResult);
           };
 
+          const timer = setTimeout(async () => {
+            console.warn('[Stockfish Engine] Search timeout reached for FEN, resolving with best accumulated eval:', cleanFen);
+            finish(accumulatedEval.depth > 0 ? accumulatedEval : initialFallback);
+          }, maxWait);
+
+          const onLine = (line: string) => {
+            if (line.startsWith('info') && line.includes('score')) {
+              console.log('[Stockfish Engine] TRACE INFO RESPONSE:', line);
+              const parsed = this.parseInfoLine(line);
+              if (parsed) {
+                accumulatedEval = parsed;
+              }
+            } else if (line.startsWith('bestmove')) {
+              console.log('[Stockfish Engine] TRACE BESTMOVE RESPONSE:', line);
+              const p = line.split(/\s+/);
+              const bestMove = parseUciMove(p[1]);
+              finish({
+                ...accumulatedEval,
+                bestMove: bestMove || accumulatedEval.bestMove,
+              });
+            }
+          };
+
+          this.rawListeners.push(onLine);
           this.sendCommand(`position fen ${cleanFen}`);
-          this.sendCommand(`go depth ${depth}`);
+          if (movetimeMs) {
+            this.sendCommand(`go depth ${depth} movetime ${movetimeMs}`);
+          } else {
+            this.sendCommand(`go depth ${depth}`);
+          }
         });
       } catch (err) {
         console.warn('Stockfish evaluation failed, returning fallback:', err);

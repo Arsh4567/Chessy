@@ -1,14 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  ExplorerDatabase, 
   LichessExplorerResult, 
   fetchLichessOpeningStats, 
-  LichessExplorerMove,
-  getLichessCooldown,
-  resetLichessCircuitBreaker
+  LichessExplorerMove 
 } from '../../utils/lichessExplorer';
 import { StockfishEvaluation } from '../../utils/stockfishWorker';
-import { Database, Award, BookOpen, RefreshCw, Cpu, AlertTriangle, ShieldCheck, Play } from 'lucide-react';
+import { Award, BookOpen, RefreshCw, Cpu } from 'lucide-react';
 
 interface OpeningExplorerProps {
   fen: string;
@@ -23,98 +20,55 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = React.memo(({
   stockfishEval,
   bestMoveSan,
 }) => {
-  const [database, setDatabase] = useState<ExplorerDatabase>('lichess');
   const [explorerData, setExplorerData] = useState<LichessExplorerResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
 
-  // Debounced, safe on-demand fetch for only the current FEN
+  // Safe on-demand fetch for only the exact current position FEN
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
-    setStatusMessage(null);
 
-    const cooldown = getLichessCooldown();
-    setCooldownSeconds(cooldown);
-
+    // Debounce slightly to allow smooth board navigation
     const timer = setTimeout(async () => {
       try {
-        const response = await fetchLichessOpeningStats(fen, database);
+        const response = await fetchLichessOpeningStats(fen);
         if (!isMounted) return;
 
         if (response.status === 'success' && response.data) {
           setExplorerData(response.data);
-          setStatusMessage(null);
-          setCooldownSeconds(0);
-        } else if (response.status === 'disabled' || response.status === 'rate_limited') {
+        } else {
           setExplorerData(null);
-          setStatusMessage(response.message || 'Lichess explorer temporarily paused.');
-          setCooldownSeconds(response.cooldownSeconds || getLichessCooldown());
-        } else if (response.status === 'error') {
-          if (response.message !== 'Request cancelled') {
-            setExplorerData(null);
-            setStatusMessage(response.message || 'Unable to fetch database statistics.');
-          }
         }
-      } catch (e) {
+      } catch {
         if (isMounted) {
           setExplorerData(null);
-          setStatusMessage('Database connection unavailable.');
         }
       } finally {
         if (isMounted) {
           setIsLoading(false);
         }
       }
-    }, 180);
+    }, 120);
 
     return () => {
       isMounted = false;
       clearTimeout(timer);
     };
-  }, [fen, database]);
-
-  // Countdown timer for cooldown display
-  useEffect(() => {
-    if (cooldownSeconds <= 0) return;
-    const interval = setInterval(() => {
-      setCooldownSeconds((prev) => {
-        if (prev <= 1) {
-          setStatusMessage(null);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [cooldownSeconds]);
-
-  const handleManualRetry = useCallback(async () => {
-    resetLichessCircuitBreaker();
-    setCooldownSeconds(0);
-    setStatusMessage(null);
-    setIsLoading(true);
-    try {
-      const response = await fetchLichessOpeningStats(fen, database);
-      if (response.status === 'success' && response.data) {
-        setExplorerData(response.data);
-      } else {
-        setStatusMessage(response.message || 'Database unavailable');
-      }
-    } catch {
-      setStatusMessage('Network connection failed');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [fen, database]);
+  }, [fen]);
 
   const moves = explorerData?.moves || [];
   const openingName = explorerData?.opening?.name;
   const ecoCode = explorerData?.opening?.eco;
   const totalGames = explorerData?.totalGames || 0;
+  const whiteTotal = explorerData?.whiteTotal || 0;
+  const drawsTotal = explorerData?.drawsTotal || 0;
+  const blackTotal = explorerData?.blackTotal || 0;
 
-  // Stockfish evaluation display
+  const whiteWinPct = totalGames > 0 ? Math.round((whiteTotal / totalGames) * 100) : 0;
+  const drawPct = totalGames > 0 ? Math.round((drawsTotal / totalGames) * 100) : 0;
+  const blackWinPct = totalGames > 0 ? Math.max(0, 100 - whiteWinPct - drawPct) : 0;
+
+  // Independent Stockfish evaluation display
   const stockfishScoreStr = stockfishEval
     ? stockfishEval.displayEval ||
       (stockfishEval.evalPawns !== undefined
@@ -124,54 +78,32 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = React.memo(({
 
   return (
     <div className="flex flex-col h-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl text-slate-200 select-none">
-      {/* Header with Title & Database Toggle */}
-      <div className="p-3 bg-slate-950/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 shrink-0">
+      {/* Header */}
+      <div className="p-3 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-amber-400" />
+          <Award className="w-4 h-4 text-amber-400" />
           <span className="font-bold text-xs uppercase tracking-wider text-slate-200">
-            Opening Explorer
+            Masters Opening Explorer
           </span>
         </div>
-
-        {/* Database Selector: Most Played vs Masters */}
-        <div className="flex items-center bg-slate-900 border border-slate-800 p-0.5 rounded-xl">
-          <button
-            onClick={() => setDatabase('lichess')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              database === 'lichess'
-                ? 'bg-amber-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="Most Played online rated games on Lichess"
-          >
-            <Database className="w-3 h-3" />
-            <span>Most Played</span>
-          </button>
-          <button
-            onClick={() => setDatabase('masters')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              database === 'masters'
-                ? 'bg-amber-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-            title="FIDE 2200+ Master over-the-board tournament games"
-          >
-            <Award className="w-3 h-3" />
-            <span>Masters</span>
-          </button>
-        </div>
+        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700/60">
+          FIDE 2200+ Masters
+        </span>
       </div>
 
-      {/* Opening Name & ECO Banner */}
-      <div className="px-3 py-2 bg-slate-900/95 border-b border-slate-800/80 flex items-center justify-between shrink-0">
+      {/* Opening Name & ECO Banner (displayed whenever available) */}
+      <div className="px-3 py-2.5 bg-slate-900/95 border-b border-slate-800/80 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 overflow-hidden">
           {ecoCode && (
             <span className="font-mono font-black text-xs px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
               {ecoCode}
             </span>
           )}
-          <span className="font-bold text-xs text-slate-100 truncate" title={openingName || 'Standard Opening'}>
-            {openingName || (ecoCode ? 'Identified Variation' : 'Position')}
+          <span 
+            className="font-bold text-xs text-slate-100 truncate" 
+            title={openingName || 'Chess Position'}
+          >
+            {openingName || (ecoCode ? 'Identified Variation' : 'Chess Position')}
           </span>
         </div>
         {totalGames > 0 && (
@@ -181,7 +113,7 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = React.memo(({
         )}
       </div>
 
-      {/* Independent Local Stockfish Engine Best Card */}
+      {/* Independent Local Stockfish Engine Best Card (Kept separate from Masters data) */}
       <div className="mx-3 my-2 p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
@@ -207,42 +139,68 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = React.memo(({
           </div>
         </div>
         <div className="text-right">
-          <span className="text-[9px] font-semibold text-emerald-400/90 block">Local Engine</span>
-          <span className="text-[9px] text-slate-400 block">Separate calculation</span>
+          <span className="text-[9px] font-semibold text-emerald-400/90 block">Engine Calculation</span>
+          <span className="text-[9px] text-slate-400 block">Independent evaluation</span>
         </div>
       </div>
 
-      {/* Move Explorer Table & State Container */}
+      {/* Masters Statistics Summary Panel (When data is available) */}
+      {totalGames > 0 && (
+        <div className="mx-3 mb-2 p-2 bg-slate-950/70 border border-slate-800 rounded-xl shrink-0">
+          <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 mb-1.5 px-0.5">
+            <span>
+              <strong className="text-white">White wins:</strong> {whiteWinPct}% ({whiteTotal.toLocaleString()})
+            </span>
+            <span>
+              <strong className="text-slate-400">Draws:</strong> {drawPct}% ({drawsTotal.toLocaleString()})
+            </span>
+            <span>
+              <strong className="text-slate-400">Black wins:</strong> {blackWinPct}% ({blackTotal.toLocaleString()})
+            </span>
+          </div>
+          {/* Position Win/Draw/Loss Bar */}
+          <div className="w-full h-2 rounded-full overflow-hidden flex bg-slate-800 border border-slate-700/50">
+            {whiteWinPct > 0 && (
+              <div 
+                style={{ width: `${whiteWinPct}%` }} 
+                className="bg-slate-100 h-full" 
+                title={`White wins: ${whiteWinPct}%`} 
+              />
+            )}
+            {drawPct > 0 && (
+              <div 
+                style={{ width: `${drawPct}%` }} 
+                className="bg-slate-500 h-full" 
+                title={`Draws: ${drawPct}%`} 
+              />
+            )}
+            {blackWinPct > 0 && (
+              <div 
+                style={{ width: `${blackWinPct}%` }} 
+                className="bg-slate-900 h-full" 
+                title={`Black wins: ${blackWinPct}%`} 
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Masters Move Explorer Table or "No opening data" */}
       <div className="flex-1 overflow-y-auto px-3 pb-3 min-h-[140px]">
         {isLoading ? (
           <div className="h-full flex flex-col items-center justify-center py-8 space-y-2 text-slate-400">
             <RefreshCw className="w-5 h-5 animate-spin text-amber-400" />
-            <span className="text-xs font-medium">Fetching opening statistics...</span>
-          </div>
-        ) : cooldownSeconds > 0 || statusMessage ? (
-          <div className="h-full flex flex-col items-center justify-center py-6 px-4 text-center space-y-2.5">
-            <AlertTriangle className="w-6 h-6 text-amber-400/90" />
-            <div className="space-y-1">
-              <p className="text-xs text-slate-300 font-semibold">{statusMessage || 'Lichess Database Unavailable'}</p>
-              <p className="text-[11px] text-slate-400">
-                {cooldownSeconds > 0
-                  ? `Cooldown active: ${cooldownSeconds}s remaining to respect API limits.`
-                  : 'Board and Stockfish analysis continue running smoothly.'}
-              </p>
-            </div>
-            <button
-              onClick={handleManualRetry}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-xl border border-slate-700 cursor-pointer shadow transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Retry Explorer</span>
-            </button>
+            <span className="text-xs font-medium">Fetching Masters opening statistics...</span>
           </div>
         ) : moves.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center py-6 text-center text-slate-400 space-y-1">
-            <BookOpen className="w-6 h-6 text-slate-600 mb-1" />
-            <p className="text-xs font-medium text-slate-300">No database games recorded</p>
-            <p className="text-[11px] text-slate-500">Position is out of opening book</p>
+          <div className="h-full flex flex-col items-center justify-center py-8 text-center text-slate-400 space-y-2">
+            <BookOpen className="w-8 h-8 text-slate-600 mb-1" />
+            <p className="text-sm font-semibold text-slate-300">No opening data</p>
+            <p className="text-xs text-slate-500 max-w-[260px]">
+              {openingName 
+                ? `No master games found for this variation of ${openingName}.` 
+                : 'Position is out of Masters opening book.'}
+            </p>
           </div>
         ) : (
           <div className="space-y-1.5 pt-1">
@@ -254,14 +212,14 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = React.memo(({
               <span className="col-span-5 text-center">Win / Draw / Loss</span>
             </div>
 
-            {/* Move Rows */}
+            {/* Most-Played Moves Rows */}
             {moves.map((m: LichessExplorerMove) => {
               return (
                 <button
                   key={m.uci || m.san}
                   onClick={() => onSelectMove(m.san)}
                   className="w-full grid grid-cols-12 items-center px-2 py-2 rounded-xl bg-slate-950/60 hover:bg-slate-800/90 border border-slate-800/80 hover:border-amber-500/40 transition-all text-left group cursor-pointer"
-                  title={`Play ${m.san} (${m.totalGames.toLocaleString()} games in ${database === 'masters' ? 'Masters' : 'Lichess'} database)`}
+                  title={`Play ${m.san} (${m.totalGames.toLocaleString()} games in Masters database)`}
                 >
                   {/* Move SAN */}
                   <div className="col-span-2 flex items-center gap-1 font-mono font-black text-xs text-slate-100 group-hover:text-amber-300">
@@ -324,11 +282,11 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = React.memo(({
       {/* Footer Info */}
       <div className="p-2.5 bg-slate-950/90 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between shrink-0">
         <span className="flex items-center gap-1 text-slate-400">
-          <Database className="w-3 h-3 text-amber-400" />
-          <span>Lichess Opening DB</span>
+          <BookOpen className="w-3 h-3 text-amber-400" />
+          <span>Lichess Masters Opening DB</span>
         </span>
         <span className="text-slate-500 font-mono">
-          {database === 'masters' ? 'FIDE 2200+ Masters' : 'Rated 1600-2500+'}
+          https://explorer.lichess.ovh/masters
         </span>
       </div>
     </div>

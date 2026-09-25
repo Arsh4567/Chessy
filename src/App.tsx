@@ -28,6 +28,7 @@ import {
   UserStats
 } from './utils/storage';
 import { stockfish, parseUciMove, StockfishEvaluation } from './utils/stockfishWorker';
+import { fetchLichessData, LichessData } from './utils/lichessExplorer';
 
 import { Navbar, NavTab } from './components/Navigation/Navbar';
 import { ChessBoard } from './components/ChessBoard/ChessBoard';
@@ -37,6 +38,7 @@ import { PlayerCard } from './components/Game/PlayerCard';
 import { GameControls } from './components/Game/GameControls';
 import { GameOverModal } from './components/Game/GameOverModal';
 import { AnalysisView } from './components/Analysis/AnalysisView';
+import { LichessMasters } from './components/Analysis/LichessMasters';
 import { BotSelection } from './components/Bots/BotSelection';
 import { PuzzleTrainer } from './components/Puzzles/PuzzleTrainer';
 import { StatsView } from './components/Stats/StatsView';
@@ -200,11 +202,38 @@ export default function App() {
   });
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
 
-  // Evaluate any position with real Stockfish engine
-  const evaluateCurrentPosition = useCallback(async (fen: string, depth = 12) => {
+  // Lichess Opening Explorer Masters Data State for current board FEN
+  const [lichessData, setLichessData] = useState<LichessData | null>(null);
+
+  // User-defined Stockfish Evaluation Depth (between 12 and 22, default 14)
+  const [evaluationDepth, setEvaluationDepth] = useState<number>(14);
+  const evaluationDepthRef = useRef<number>(14);
+  useEffect(() => {
+    evaluationDepthRef.current = evaluationDepth;
+  }, [evaluationDepth]);
+
+  // Evaluate any position with real Stockfish engine using user-defined depth and fetch Lichess data in parallel
+  const evaluateCurrentPosition = useCallback(async (fen: string, depth?: number) => {
+    const targetDepth = depth !== undefined ? depth : evaluationDepthRef.current;
+
+    // Trigger Lichess Masters data fetch alongside Stockfish evaluation (completely decoupled)
+    fetchLichessData(fen)
+      .then((res) => {
+        if (res.status === 'success' && res.data) {
+          setLichessData(res.data);
+        } else {
+          setLichessData(null);
+        }
+      })
+      .catch((err) => {
+        // Lichess failures must NEVER affect the Stockfish pipeline
+        console.warn('Lichess fetch non-fatal error:', err);
+        setLichessData(null);
+      });
+
     setIsEvaluating(true);
     try {
-      const result = await stockfish.evaluatePosition(fen, depth);
+      const result = await stockfish.evaluatePosition(fen, targetDepth);
       if (result) {
         setStockfishEval(result);
         return result;
@@ -217,9 +246,17 @@ export default function App() {
     return null;
   }, []);
 
-  // Run initial evaluation on mount
+  // Update evaluation depth and re-evaluate current active board position immediately
+  const handleDepthChange = useCallback((newDepth: number) => {
+    const clampedDepth = Math.max(12, Math.min(22, Math.round(newDepth)));
+    setEvaluationDepth(clampedDepth);
+    evaluationDepthRef.current = clampedDepth;
+    evaluateCurrentPosition(chessRef.current.fen(), clampedDepth);
+  }, [evaluateCurrentPosition]);
+
+  // Run initial evaluation on mount using user-defined depth
   useEffect(() => {
-    evaluateCurrentPosition(chess.fen(), 10);
+    evaluateCurrentPosition(chess.fen());
   }, [evaluateCurrentPosition]);
 
   // Execute a chess move on the active game state safely
@@ -334,7 +371,7 @@ export default function App() {
     chessRef.current = nextChess;
 
     // Immediately trigger real Stockfish UCI evaluation for new position & upgrade classification
-    evaluateCurrentPosition(nextChess.fen(), 12).then((evalRes) => {
+    evaluateCurrentPosition(nextChess.fen()).then((evalRes) => {
       if (evalRes && evalRes.scoreCp !== undefined) {
         const accurateEval = evalRes.evalPawns ?? +(evalRes.scoreCp / 100).toFixed(2);
         const deepClassification = classifyEngineMove(
@@ -497,7 +534,7 @@ export default function App() {
     setActiveTab('play');
 
     // Immediately trigger Stockfish evaluation for starting board state
-    evaluateCurrentPosition(newChess.fen(), 12);
+    evaluateCurrentPosition(newChess.fen());
   }, [evaluateCurrentPosition]);
 
   const handleStartBotGame = (
@@ -574,7 +611,10 @@ export default function App() {
     (window as any).stockfish = stockfish;
     (window as any).stockfishEval = stockfishEval;
     (window as any).evaluatePosition = evaluateCurrentPosition;
-  }, [chess, executeMove, handleLoadPosition, stockfishEval, evaluateCurrentPosition]);
+    (window as any).evaluationDepth = evaluationDepth;
+    (window as any).setEvaluationDepth = handleDepthChange;
+    (window as any).lichessData = lichessData;
+  }, [chess, executeMove, handleLoadPosition, stockfishEval, evaluateCurrentPosition, evaluationDepth, handleDepthChange, lichessData]);
 
   const handleRequestHint = async () => {
     try {
@@ -612,7 +652,7 @@ export default function App() {
           : null
       );
       setBestMoveHint(null);
-      evaluateCurrentPosition(targetBoard.fen(), 12);
+      evaluateCurrentPosition(targetBoard.fen());
     } catch (e) {
       console.warn('Error during takeback:', e);
     }
@@ -863,42 +903,69 @@ export default function App() {
                       onChangeTheme={(t) =>
                         handleUpdatePreferences({ ...preferences, boardTheme: t })
                       }
+                      evaluationDepth={evaluationDepth}
+                      onDepthChange={handleDepthChange}
                       disabled={!inActiveMatch}
                     />
                   </div>
                 </div>
 
-                {/* Move History */}
-                <div className="lg:col-span-4 h-[400px] sm:h-[520px]">
-                  <MoveHistory
-                    moves={movesHistory}
-                    currentMoveIndex={currentMoveIdx}
-                    onSelectMove={(idx) => {
-                      try {
-                        if (idx < 0) {
-                          const startBoard = startingFen ? new Chess(startingFen) : new Chess();
-                          setChess(startBoard);
-                          chessRef.current = startBoard;
-                          setCurrentMoveIdx(-1);
-                          setLastMove(null);
-                          evaluateCurrentPosition(startBoard.fen(), 10);
-                        } else if (movesHistory[idx]) {
-                          const targetFen = movesHistory[idx].fen;
-                          const targetBoard = targetFen ? new Chess(targetFen) : new Chess();
-                          setChess(targetBoard);
-                          chessRef.current = targetBoard;
-                          setCurrentMoveIdx(idx);
-                          setLastMove({
-                            from: movesHistory[idx].from,
-                            to: movesHistory[idx].to,
-                          });
-                          evaluateCurrentPosition(targetBoard.fen(), 10);
+                {/* Move History & Masters Book */}
+                <div className="lg:col-span-4 flex flex-col gap-3">
+                  <div className="h-[250px] sm:h-[280px]">
+                    <MoveHistory
+                      moves={movesHistory}
+                      currentMoveIndex={currentMoveIdx}
+                      onSelectMove={(idx) => {
+                        try {
+                          if (idx < 0) {
+                            const startBoard = startingFen ? new Chess(startingFen) : new Chess();
+                            setChess(startBoard);
+                            chessRef.current = startBoard;
+                            setCurrentMoveIdx(-1);
+                            setLastMove(null);
+                            evaluateCurrentPosition(startBoard.fen());
+                          } else if (movesHistory[idx]) {
+                            const targetFen = movesHistory[idx].fen;
+                            const targetBoard = targetFen ? new Chess(targetFen) : new Chess();
+                            setChess(targetBoard);
+                            chessRef.current = targetBoard;
+                            setCurrentMoveIdx(idx);
+                            setLastMove({
+                              from: movesHistory[idx].from,
+                              to: movesHistory[idx].to,
+                            });
+                            evaluateCurrentPosition(targetBoard.fen());
+                          }
+                        } catch (err) {
+                          console.warn('onSelectMove error:', err);
                         }
-                      } catch (err) {
-                        console.warn('onSelectMove error:', err);
+                      }}
+                      openingName={opening?.name}
+                    />
+                  </div>
+
+                  {/* Lichess Masters Opening Book & Engine Complement */}
+                  <LichessMasters
+                    lichessData={lichessData}
+                    stockfishEval={stockfishEval}
+                    onSelectMove={(san) => {
+                      if (inActiveMatch && isCurrentTurnHuman) {
+                        try {
+                          const verboseMoves = chess.moves({ verbose: true });
+                          const match = verboseMoves.find((m) => m.san === san);
+                          if (match) {
+                            executeMove({
+                              from: match.from,
+                              to: match.to,
+                              promotion: match.promotion,
+                            });
+                          }
+                        } catch (err) {
+                          console.warn('Error executing Masters move:', err);
+                        }
                       }
                     }}
-                    openingName={opening?.name}
                   />
                 </div>
               </div>
@@ -941,16 +1008,20 @@ export default function App() {
                   const temp = new Chess();
                   temp.loadPgn(pgn);
                   const history = temp.history({ verbose: true });
+                  const replay = new Chess();
                   setMovesHistory(
-                    history.map((h) => ({
-                      san: h.san,
-                      from: h.from,
-                      to: h.to,
-                      piece: h.piece as any,
-                      color: h.color as any,
-                      fen: temp.fen(),
-                      eval: 0,
-                    }))
+                    history.map((h) => {
+                      replay.move({ from: h.from, to: h.to, promotion: h.promotion });
+                      return {
+                        san: h.san,
+                        from: h.from,
+                        to: h.to,
+                        piece: h.piece as any,
+                        color: h.color as any,
+                        fen: replay.fen(),
+                        eval: 0,
+                      };
+                    })
                   );
                 } catch {}
                 setActiveTab('review');
@@ -1034,16 +1105,20 @@ export default function App() {
                 const temp = new Chess();
                 temp.loadPgn(pgn);
                 const history = temp.history({ verbose: true });
+                const replay = new Chess();
                 setMovesHistory(
-                  history.map((h) => ({
-                    san: h.san,
-                    from: h.from,
-                    to: h.to,
-                    piece: h.piece as any,
-                    color: h.color as any,
-                    fen: temp.fen(),
-                    eval: 0,
-                  }))
+                  history.map((h) => {
+                    replay.move({ from: h.from, to: h.to, promotion: h.promotion });
+                    return {
+                      san: h.san,
+                      from: h.from,
+                      to: h.to,
+                      piece: h.piece as any,
+                      color: h.color as any,
+                      fen: replay.fen(),
+                      eval: 0,
+                    };
+                  })
                 );
               } catch {}
               setActiveTab('review');

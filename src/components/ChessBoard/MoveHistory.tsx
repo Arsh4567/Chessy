@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useMemo } from 'react';
 import { AnalyzedMove, MoveClassification } from '../../types/chess';
 import { BookOpen } from 'lucide-react';
 import { MOVE_QUALITY_SIGNS } from '../../utils/moveClassification';
+import { MoveMark } from './MoveMark';
 
 interface MoveHistoryProps {
   moves: AnalyzedMove[];
@@ -40,17 +41,29 @@ export const MoveHistory: React.FC<MoveHistoryProps> = React.memo(({
     return rows;
   }, [moves]);
 
-  const renderBadge = (classification?: MoveClassification) => {
-    if (!classification) return null;
-    const sign = MOVE_QUALITY_SIGNS[classification];
-    if (!sign) return null;
+  const renderBadge = (move: AnalyzedMove) => {
+    // If Stockfish has evaluated the move:
+    if (move.classification) {
+      return (
+        <div className="flex items-center gap-1 shrink-0 ml-1.5">
+          {move.isBookMove && (
+            <span
+              className="text-[10px] px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+              title={`Book Move / Opening Theory${move.openingName ? `: ${move.openingName}` : ''}`}
+            >
+              📖
+            </span>
+          )}
+          <MoveMark classification={move.classification} size={22} className="shrink-0" />
+        </div>
+      );
+    }
 
+    // When Stockfish analysis is pending: Display Analyzing... instead of Book Move!
     return (
-      <span
-        className={`inline-flex items-center justify-center font-mono font-black text-[10px] px-1.5 py-0.2 rounded border shrink-0 ml-1.5 ${sign.badgeBg} ${sign.badgeText} ${sign.badgeBorder}`}
-        title={`${sign.label} (${sign.symbol}): ${sign.description}`}
-      >
-        {sign.symbol}
+      <span className="text-[9px] font-mono text-slate-500 italic ml-1.5 shrink-0 flex items-center gap-1">
+        <span className="w-1 h-1 rounded-full bg-amber-400/80 animate-ping inline-block" />
+        <span>Analyzing...</span>
       </span>
     );
   };
@@ -97,7 +110,7 @@ export const MoveHistory: React.FC<MoveHistoryProps> = React.memo(({
                 }`}
               >
                 <span>{row.white.san}</span>
-                {renderBadge(row.white.classification)}
+                {renderBadge(row.white)}
               </button>
 
               {/* Black Move */}
@@ -111,7 +124,7 @@ export const MoveHistory: React.FC<MoveHistoryProps> = React.memo(({
                   }`}
                 >
                   <span>{row.black.san}</span>
-                  {renderBadge(row.black.classification)}
+                  {renderBadge(row.black)}
                 </button>
               ) : (
                 <div className="col-span-5" />
