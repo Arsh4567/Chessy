@@ -14,7 +14,8 @@ import {
   AnalyzedMove 
 } from './types/chess';
 import { TIME_CONTROLS, INITIAL_BOTS } from './utils/mockData';
-import { getStockfishMoveAsync, evaluateBoard } from './utils/engine';
+import { getStockfishMoveAsync, evaluateBoard, minimax } from './utils/engine';
+import { classifyEngineMove, calculateGameAccuracy } from './utils/moveClassification';
 import { detectOpening } from './utils/openings';
 import { sound } from './utils/sound';
 import { 
@@ -60,8 +61,8 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // Navigation & Preferences
-  const [activeTab, setActiveTab] = useState<NavTab>('play');
+  // Navigation & Preferences (Dashboard is the first default view)
+  const [activeTab, setActiveTab] = useState<NavTab>('stats');
   const [preferences, setPreferences] = useState<UserPreferences>(loadPreferences);
   const [stats, setStats] = useState<UserStats>(loadUserStats);
   const [showSettings, setShowSettings] = useState<boolean>(false);
@@ -273,8 +274,36 @@ export default function App() {
       }
     }
 
-    // Analyzed Move info
-    const evalScore = evaluateBoard(nextChess) / 100;
+    // Determine best move and evaluation before move
+    let bestMoveSan = '';
+    if (stockfishEval.bestMove) {
+      try {
+        const testChess = new Chess(currentChess.fen());
+        const m = testChess.move({
+          from: stockfishEval.bestMove.from,
+          to: stockfishEval.bestMove.to,
+          promotion: stockfishEval.bestMove.promotion,
+        });
+        if (m) bestMoveSan = m.san;
+      } catch {}
+    }
+
+    const evalBefore = stockfishEval.scoreCp ?? evaluateBoard(currentChess);
+    const evalAfterInitial = evaluateBoard(nextChess);
+    const moveNumber = Math.floor(movesHistory.length / 2) + 1;
+    const isBook = moveNumber <= 10 && Boolean(detectOpening([...movesHistory.map((m) => m.san), moveResult.san]));
+
+    // Fast initial classification
+    const initialClassification = classifyEngineMove(
+      new Chess(currentChess.fen()),
+      moveResult,
+      evalBefore,
+      evalAfterInitial,
+      bestMoveSan,
+      moveNumber,
+      { isBookOpeningMove: isBook }
+    );
+
     const newAnalyzedMove: AnalyzedMove = {
       san: moveResult.san,
       from: moveResult.from,
@@ -284,11 +313,16 @@ export default function App() {
       captured: moveResult.captured as any,
       promotion: moveResult.promotion as any,
       fen: nextChess.fen(),
-      eval: evalScore,
+      eval: +(evalAfterInitial / 100).toFixed(2),
+      classification: initialClassification.classification,
+      commentary: initialClassification.commentary,
+      bestMoveSan: bestMoveSan || undefined,
     };
 
+    let updatedHistory: AnalyzedMove[] = [];
     setMovesHistory((prev) => {
       const nextH = [...prev, newAnalyzedMove];
+      updatedHistory = nextH;
       setCurrentMoveIdx(nextH.length - 1);
       return nextH;
     });
@@ -299,17 +333,32 @@ export default function App() {
     setChess(nextChess);
     chessRef.current = nextChess;
 
-    // Immediately trigger real Stockfish UCI evaluation for new position
+    // Immediately trigger real Stockfish UCI evaluation for new position & upgrade classification
     evaluateCurrentPosition(nextChess.fen(), 12).then((evalRes) => {
-      if (evalRes && evalRes.evalPawns !== undefined) {
+      if (evalRes && evalRes.scoreCp !== undefined) {
+        const accurateEval = evalRes.evalPawns ?? +(evalRes.scoreCp / 100).toFixed(2);
+        const deepClassification = classifyEngineMove(
+          new Chess(currentChess.fen()),
+          moveResult,
+          evalBefore,
+          evalRes.scoreCp,
+          bestMoveSan,
+          moveNumber,
+          { isBookOpeningMove: isBook }
+        );
+
         setMovesHistory((prev) => {
           if (prev.length === 0) return prev;
           const updated = [...prev];
-          const lastIdx = updated.length - 1;
-          if (updated[lastIdx]) {
-            updated[lastIdx] = {
-              ...updated[lastIdx],
-              eval: evalRes.evalPawns ?? (evalRes.scoreCp / 100),
+          const targetIdx = updated.findIndex((m) => m.fen === nextChess.fen());
+          const idx = targetIdx !== -1 ? targetIdx : updated.length - 1;
+          if (updated[idx]) {
+            updated[idx] = {
+              ...updated[idx],
+              eval: accurateEval,
+              classification: deepClassification.classification,
+              commentary: deepClassification.commentary,
+              bestMoveSan: bestMoveSan || updated[idx].bestMoveSan,
             };
           }
           return updated;
@@ -324,18 +373,19 @@ export default function App() {
         (prevTurn === 'w' && playerColor === 'w') || (prevTurn === 'b' && playerColor === 'b');
       handleGameOver(
         isPlayerWinner ? 'win' : 'loss',
-        `Checkmate! ${winner} delivered victory.`
+        `Checkmate! ${winner} delivered victory.`,
+        updatedHistory
       );
     } else if (nextChess.isDraw()) {
       let reason = 'Draw.';
       if (nextChess.isStalemate()) reason = 'Draw by Stalemate.';
       else if (nextChess.isThreefoldRepetition()) reason = 'Draw by Repetition.';
       else if (nextChess.isInsufficientMaterial()) reason = 'Draw by Insufficient Material.';
-      handleGameOver('draw', reason);
+      handleGameOver('draw', reason, updatedHistory);
     }
 
     return true;
-  }, [playerColor, timeControl.incrementSeconds]);
+  }, [playerColor, timeControl.incrementSeconds, movesHistory, stockfishEval, evaluateCurrentPosition]);
 
   // Stockfish Bot Move Execution
   useEffect(() => {
@@ -382,14 +432,17 @@ export default function App() {
     };
   }, [inActiveMatch, chess.fen(), gameMode, playerColor, executeMove, selectedBot]);
 
-  const handleGameOver = (result: 'win' | 'loss' | 'draw', reason: string) => {
+  const handleGameOver = (result: 'win' | 'loss' | 'draw', reason: string, customHistory?: AnalyzedMove[]) => {
     setInActiveMatch(false);
+
+    const finalHistory = customHistory || movesHistory;
+    const { whiteAccuracy, blackAccuracy } = calculateGameAccuracy(finalHistory);
 
     // Save to real local storage
     const updatedStats = recordGameResult(
       result,
       opponent.name,
-      movesHistory.length + 1,
+      finalHistory.length,
       timeControl.name,
       chess.pgn()
     );
@@ -399,8 +452,8 @@ export default function App() {
       isOpen: true,
       result,
       reason,
-      whiteAccuracy: +(85 + Math.random() * 10).toFixed(1),
-      blackAccuracy: +(80 + Math.random() * 10).toFixed(1),
+      whiteAccuracy,
+      blackAccuracy,
     });
   };
 
@@ -964,9 +1017,11 @@ export default function App() {
             </div>
           )
         ) : (
-          /* Stats & Match History */
+          /* Dashboard & Match History */
           <StatsView
             stats={stats}
+            onStartBotGame={() => setActiveTab('bots')}
+            onSolvePuzzle={() => setActiveTab('puzzles')}
             onOpenReport={(games, player, username) => {
               setChessComGames(games);
               setChessComPlayer(player);

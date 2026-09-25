@@ -75,6 +75,8 @@ export class StockfishEngine {
   };
   private listeners: ((evaluation: StockfishEvaluation) => void)[] = [];
   private rawListeners: ((line: string) => void)[] = [];
+  private fenEvalCache: Map<string, StockfishEvaluation> = new Map();
+  private readonly MAX_FEN_CACHE = 250;
 
   constructor() {
     this.init();
@@ -497,20 +499,29 @@ export class StockfishEngine {
   /**
    * Evaluates a position with Stockfish with guaranteed serialization and fallback
    */
-  public async evaluatePosition(fen: string, depth: number = 12): Promise<StockfishEvaluation> {
+  public async evaluatePosition(fen: string, depth: number = 10): Promise<StockfishEvaluation> {
+    const cleanFen = fen.trim();
+
     const run = async (): Promise<StockfishEvaluation> => {
       try {
         await this.ensureReady();
         if (this.workerFailed || !this.worker) {
-          return this.computeFallbackEval(fen);
+          return this.computeFallbackEval(cleanFen);
         }
 
         // Conclude any prior active search before sending new position
         await this.stopActiveSearch();
 
-        this.currentFen = fen;
-        const parts = fen.trim().split(/\s+/);
+        this.currentFen = cleanFen;
+        const parts = cleanFen.split(/\s+/);
         this.currentSideToMove = parts.length > 1 && parts[1] === 'b' ? 'b' : 'w';
+
+        // Reset latestEval baseline for this specific FEN
+        const initialFallback = this.computeFallbackEval(cleanFen);
+        this.latestEval = {
+          ...initialFallback,
+          depth: 0,
+        };
 
         return await new Promise<StockfishEvaluation>((resolve) => {
           this.isSearching = true;
@@ -518,9 +529,10 @@ export class StockfishEngine {
           const timer = setTimeout(async () => {
             if (this.currentEvalResolve === resolve) {
               await this.stopActiveSearch();
-              resolve(this.latestEval.depth > 0 ? this.latestEval : this.computeFallbackEval(fen));
+              const fallback = this.latestEval.depth > 0 ? this.latestEval : this.computeFallbackEval(cleanFen);
+              resolve(fallback);
             }
-          }, 3000);
+          }, 3500);
 
           this.currentEvalResolve = (evalResult) => {
             clearTimeout(timer);
@@ -528,17 +540,17 @@ export class StockfishEngine {
             resolve(evalResult);
           };
 
-          this.sendCommand(`position fen ${fen}`);
+          this.sendCommand(`position fen ${cleanFen}`);
           this.sendCommand(`go depth ${depth}`);
         });
       } catch (err) {
         console.warn('Stockfish evaluation failed, returning fallback:', err);
-        return this.computeFallbackEval(fen);
+        return this.computeFallbackEval(cleanFen);
       }
     };
 
     const task = this.evalQueue.then(run, run);
-    this.evalQueue = task.catch(() => this.computeFallbackEval(fen));
+    this.evalQueue = task.catch(() => this.computeFallbackEval(cleanFen));
     return task;
   }
 

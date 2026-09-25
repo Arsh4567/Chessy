@@ -1,6 +1,5 @@
-import { Chess, Move, Square } from 'chess.js';
-import { MoveClassification, PieceType, PieceColor } from '../types/chess';
-import { evaluateBoard } from './engine';
+import { Chess, Move } from 'chess.js';
+import { MoveClassification, PieceType, AnalyzedMove } from '../types/chess';
 
 export interface MoveQualitySign {
   classification: MoveClassification;
@@ -128,27 +127,21 @@ export const MOVE_QUALITY_SIGNS: Record<MoveClassification, MoveQualitySign> = {
 };
 
 export interface ClassificationThresholds {
-  /** Maximum evaluation loss (in centipawns) allowed for Best move (default: 5) */
   bestMaxLoss: number;
-  /** Maximum evaluation loss (in centipawns) allowed for Excellent move (default: 22) */
   excellentMaxLoss: number;
-  /** Maximum evaluation loss (in centipawns) allowed for Good move (default: 55) */
   goodMaxLoss: number;
-  /** Maximum evaluation loss (in centipawns) allowed for Inaccuracy (default: 135) */
   inaccuracyMaxLoss: number;
-  /** Maximum evaluation loss (in centipawns) allowed for Mistake (default: 280) */
   mistakeMaxLoss: number;
-  /** Minimum evaluation loss (in centipawns) to be considered a Blunder (default: 280) */
   blunderMinLoss: number;
 }
 
 export const DEFAULT_CLASSIFICATION_THRESHOLDS: ClassificationThresholds = {
-  bestMaxLoss: 5,
-  excellentMaxLoss: 22,
-  goodMaxLoss: 55,
-  inaccuracyMaxLoss: 135,
-  mistakeMaxLoss: 280,
-  blunderMinLoss: 280,
+  bestMaxLoss: 20,
+  excellentMaxLoss: 60,
+  goodMaxLoss: 120,
+  inaccuracyMaxLoss: 220,
+  mistakeMaxLoss: 380,
+  blunderMinLoss: 380,
 };
 
 const PIECE_VALUES: Record<string, number> = {
@@ -166,26 +159,24 @@ const PIECE_VALUES: Record<string, number> = {
 export function evaluateBrilliantCriteria(
   chessBefore: Chess,
   moveResult: Move,
-  evalDelta: number,
+  evalLoss: number,
   userEvalAfter: number,
   isTopEngineMove: boolean,
   moveNumber: number
 ): { isBrilliant: boolean; reason?: string } {
-  // Opening moves (first 4 moves) cannot be brilliant
-  if (moveNumber <= 4) return { isBrilliant: false };
+  // Opening moves (first 3 moves) cannot be brilliant
+  if (moveNumber <= 3) return { isBrilliant: false };
 
-  // Must be top engine move or negligible delta
-  if (!isTopEngineMove && evalDelta < -5) {
+  // Must not have significant eval loss (must be top move or nearly top move)
+  if (!isTopEngineMove && evalLoss > 15) {
     return { isBrilliant: false };
   }
 
   // Must not lead to a lost position
-  if (userEvalAfter < -50) {
+  if (userEvalAfter < -30) {
     return { isBrilliant: false };
   }
 
-  const userColor = moveResult.color;
-  const oppColor = userColor === 'w' ? 'b' : 'w';
   const playedPiece = moveResult.piece;
   const pieceVal = PIECE_VALUES[playedPiece] || 0;
 
@@ -205,18 +196,16 @@ export function evaluateBrilliantCriteria(
     const oppMoves = chessAfter.moves({ verbose: true });
     const canBeCapturedByOpponent = oppMoves.some((m) => m.to === moveResult.to);
 
-    if (canBeCapturedByOpponent) {
-      if (userEvalAfter >= 80 || evalDelta >= 50) {
-        return {
-          isBrilliant: true,
-          reason: `Brilliant ${moveResult.piece.toUpperCase()} sacrifice creating a decisive tactical advantage!`,
-        };
-      }
+    if (canBeCapturedByOpponent && userEvalAfter >= 80) {
+      return {
+        isBrilliant: true,
+        reason: `Brilliant ${moveResult.piece.toUpperCase()} sacrifice creating a decisive tactical advantage!`,
+      };
     }
   }
 
-  // 2. Exchange Sacrifice: Rook sacrificed for Minor Piece / Pawn with crushing positional domination
-  if (playedPiece === 'r' && (capturedVal <= 330) && userEvalAfter >= 150 && evalDelta >= 30) {
+  // 2. Exchange Sacrifice: Rook sacrificed for Minor Piece / Pawn with crushing advantage
+  if (playedPiece === 'r' && capturedVal <= 330 && userEvalAfter >= 150) {
     const oppMoves = chessAfter.moves({ verbose: true });
     const canBeCaptured = oppMoves.some((m) => m.to === moveResult.to);
     if (canBeCaptured) {
@@ -235,66 +224,114 @@ export function evaluateBrilliantCriteria(
     };
   }
 
-  // 4. Ignoring a Major Threat
-  const userPiecesAttackedBefore = chessBefore.moves({ verbose: true }).filter((m) => m.captured);
-  const wasMajorPieceHanging = userPiecesAttackedBefore.some(
-    (m) => (m.captured === 'q' || m.captured === 'r') && m.color === oppColor
-  );
-
-  if (wasMajorPieceHanging && moveResult.piece !== 'q' && moveResult.piece !== 'r' && userEvalAfter >= 200 && evalDelta >= 60) {
-    return {
-      isBrilliant: true,
-      reason: 'Brilliant counter-threat ignoring enemy pressure to win by force!',
-    };
-  }
-
   return { isBrilliant: false };
 }
 
 /**
- * Classifies a played move based on the actual evaluation loss (centipawn/position swing)
- * from the position before the move to the position after the move.
- *
- * Missing Stockfish's #1 move does NOT automatically make a move a blunder.
- * A move is evaluated against configurable thresholds and dynamically scaled
- * based on whether the position is winning, equal, or losing.
+ * Calculate move accuracy percentage (0 - 100%) based on centipawn loss and win probability model
+ */
+export function calculateMoveAccuracy(evalLoss: number, isTopMove: boolean = false): number {
+  if (isTopMove || evalLoss <= 5) return 100;
+  // Standard non-linear logistic curve mapping centipawn loss to move accuracy
+  const acc = 103.1668 * Math.exp(-0.00438 * evalLoss) - 3.1668;
+  return Math.max(0, Math.min(100, Math.round(acc * 10) / 10));
+}
+
+/**
+ * Calculates aggregate White and Black game accuracy from analyzed move sequence
+ */
+export function calculateGameAccuracy(moves: AnalyzedMove[]): { whiteAccuracy: number; blackAccuracy: number } {
+  let whiteSum = 0;
+  let whiteCount = 0;
+  let blackSum = 0;
+  let blackCount = 0;
+
+  for (const m of moves) {
+    // If classification is brilliant/great/best/book, count as 100% accuracy
+    let moveAcc = 100;
+    if (m.classification === 'brilliant' || m.classification === 'great' || m.classification === 'best' || m.classification === 'book') {
+      moveAcc = 100;
+    } else if (m.classification === 'excellent') {
+      moveAcc = 94;
+    } else if (m.classification === 'good') {
+      moveAcc = 82;
+    } else if (m.classification === 'inaccuracy') {
+      moveAcc = 65;
+    } else if (m.classification === 'mistake') {
+      moveAcc = 40;
+    } else if (m.classification === 'blunder' || m.classification === 'missed_win') {
+      moveAcc = 15;
+    }
+
+    if (m.color === 'w') {
+      whiteSum += moveAcc;
+      whiteCount++;
+    } else {
+      blackSum += moveAcc;
+      blackCount++;
+    }
+  }
+
+  return {
+    whiteAccuracy: whiteCount > 0 ? Math.round((whiteSum / whiteCount) * 10) / 10 : 95.0,
+    blackAccuracy: blackCount > 0 ? Math.round((blackSum / blackCount) * 10) / 10 : 95.0,
+  };
+}
+
+/**
+ * Classifies a played move based on true searched evaluation loss from the moving player's perspective.
  */
 export function classifyEngineMove(
   chessBefore: Chess,
   moveResult: Move,
-  evalBefore: number,
-  evalAfter: number,
+  bestMoveScore: number, // Best possible score from White's perspective
+  playedMoveScore: number, // Score achieved by the played move from White's perspective
   bestMoveSan: string,
   moveNumber: number,
-  customThresholds?: Partial<ClassificationThresholds>
+  options?: {
+    customThresholds?: Partial<ClassificationThresholds>;
+    isBookOpeningMove?: boolean;
+    isOnlyGoodMove?: boolean;
+  }
 ): {
   classification: MoveClassification;
   commentary: string;
   sign: MoveQualitySign;
   evalLoss: number;
+  accuracy: number;
 } {
   const thresholds: ClassificationThresholds = {
     ...DEFAULT_CLASSIFICATION_THRESHOLDS,
-    ...customThresholds,
+    ...options?.customThresholds,
   };
 
+  // Convert scores to active player's perspective (positive = good for active player)
   const turn = moveResult.color;
-  // Centipawn evaluations from the active player's perspective
-  const userEvalBefore = turn === 'w' ? evalBefore : -evalBefore;
-  const userEvalAfter = turn === 'w' ? evalAfter : -evalAfter;
+  const isWhite = turn === 'w';
+  const userEvalBefore = isWhite ? bestMoveScore : -bestMoveScore;
+  const userEvalAfter = isWhite ? playedMoveScore : -playedMoveScore;
 
-  // Evaluation delta (positive = position improved, negative = position worsened)
-  const evalDelta = userEvalAfter - userEvalBefore;
-  // Evaluation loss (how many centipawns of advantage were surrendered)
-  const evalLoss = Math.max(0, -evalDelta);
-
+  // True centipawn loss (how much of the best evaluation was lost by playing this move)
+  const evalLoss = Math.max(0, userEvalBefore - userEvalAfter);
   const isTopMove = bestMoveSan ? bestMoveSan === moveResult.san : false;
+  const accuracy = calculateMoveAccuracy(evalLoss, isTopMove);
 
-  // 1. Check strict Brilliant conditions first
+  // 0. Book opening move check
+  if (options?.isBookOpeningMove) {
+    return {
+      classification: 'book',
+      commentary: 'Established opening theory.',
+      sign: MOVE_QUALITY_SIGNS.book,
+      evalLoss: 0,
+      accuracy: 100,
+    };
+  }
+
+  // 1. Check strict Brilliant conditions first (sacrifices, quiet winning moves)
   const brilliantCheck = evaluateBrilliantCriteria(
     chessBefore,
     moveResult,
-    evalDelta,
+    evalLoss,
     userEvalAfter,
     isTopMove,
     moveNumber
@@ -306,33 +343,47 @@ export function classifyEngineMove(
       commentary: brilliantCheck.reason || 'A brilliant tactical breakthrough!',
       sign: MOVE_QUALITY_SIGNS.brilliant,
       evalLoss,
+      accuracy: 100,
     };
   }
 
-  // 2. Exact #1 engine move or evaluation improvement / negligible loss
+  // 2. Check Great move conditions (critical only-move, tactical find in complex position)
+  if ((isTopMove || evalLoss <= 10) && (options?.isOnlyGoodMove || (moveNumber > 5 && userEvalBefore <= 50 && userEvalAfter >= 150))) {
+    return {
+      classification: 'great',
+      commentary: 'A critical move finding the best tactical path!',
+      sign: MOVE_QUALITY_SIGNS.great,
+      evalLoss,
+      accuracy: 100,
+    };
+  }
+
+  // 3. Exact #1 engine move or negligible evaluation loss (< 25 cp)
   if (isTopMove || evalLoss <= thresholds.bestMaxLoss) {
     return {
       classification: 'best',
       commentary: isTopMove
         ? 'The top engine recommendation in the position.'
-        : `An optimal move maintaining full advantage (${(userEvalAfter / 100).toFixed(2)}).`,
+        : `An optimal move maintaining advantage (${(userEvalAfter / 100).toFixed(2)}).`,
       sign: MOVE_QUALITY_SIGNS.best,
       evalLoss,
+      accuracy: 100,
     };
   }
 
-  // --- Contextual scaling for Winning vs. Balanced vs. Losing positions ---
-  // When ahead by +4.0 or more, losing 1.5 pawns while remaining at +6.0 is NOT a blunder.
+  // --- Contextual dynamic scaling ---
+  // If player was winning +6.0 and drops to +4.5, they are still completely winning (+4.5) -> NOT a blunder.
+  // If player was already lost -8.0 and drops to -9.0, they were already lost -> NOT a blunder.
   let scaleFactor = 1.0;
   if (userEvalBefore >= 400 && userEvalAfter >= 250) {
-    // Decisively winning position where user remains decisively winning
-    scaleFactor = 2.2;
+    // Decisively winning position remaining decisively winning
+    scaleFactor = 2.5;
   } else if (userEvalBefore >= 200 && userEvalAfter >= 120) {
-    // Solid advantage where user maintains clear advantage
-    scaleFactor = 1.5;
+    // Solid advantage remaining solid advantage
+    scaleFactor = 1.6;
   } else if (userEvalBefore <= -400 && userEvalAfter <= -400) {
-    // Already heavily lost position: minor slips shouldn't all be blunders
-    scaleFactor = 1.8;
+    // Already lost position
+    scaleFactor = 2.5;
   }
 
   const effectiveExcellent = thresholds.excellentMaxLoss * scaleFactor;
@@ -340,51 +391,67 @@ export function classifyEngineMove(
   const effectiveInaccuracy = thresholds.inaccuracyMaxLoss * scaleFactor;
   const effectiveMistake = thresholds.mistakeMaxLoss * scaleFactor;
 
-  // 3. Excellent Move (minimal eval loss)
+  // 4. Excellent Move (minimal eval loss, e.g. <= 0.60 pawns)
   if (evalLoss <= effectiveExcellent) {
     return {
       classification: 'excellent',
-      commentary: `An excellent move. Keeps strong pressure. (Engine preferred: ${bestMoveSan || moveResult.san})`,
+      commentary: `An excellent move. Preserves strong position. (Alternative: ${bestMoveSan || moveResult.san})`,
       sign: MOVE_QUALITY_SIGNS.excellent,
       evalLoss,
+      accuracy,
     };
   }
 
-  // 4. Good Move (minor, acceptable eval loss, e.g. +1.2 -> +0.9)
+  // 5. Good Move (minor, playable loss, e.g. <= 1.20 pawns)
   if (evalLoss <= effectiveGood) {
     return {
       classification: 'good',
-      commentary: `A solid, playable move. Better was ${bestMoveSan || 'active piece coordination'}.`,
+      commentary: `A solid, playable move. Better was ${bestMoveSan || 'active piece development'}.`,
       sign: MOVE_QUALITY_SIGNS.good,
       evalLoss,
+      accuracy,
     };
   }
 
-  // 5. Inaccuracy (conceding noticeable positional ground or initiative)
+  // 6. Inaccuracy (noticeable positional ground conceded, e.g. <= 2.20 pawns)
   if (evalLoss <= effectiveInaccuracy) {
     return {
       classification: 'inaccuracy',
       commentary: `Inaccuracy (${(evalLoss / 100).toFixed(2)} pawn loss). Allowed counterplay. Recommended: ${bestMoveSan}.`,
       sign: MOVE_QUALITY_SIGNS.inaccuracy,
       evalLoss,
+      accuracy,
     };
   }
 
-  // 6. Mistake (giving up clear advantage or significant material)
+  // 7. Mistake (giving up clear advantage or noticeable material)
   if (evalLoss <= effectiveMistake) {
     return {
       classification: 'mistake',
       commentary: `Mistake (-${(evalLoss / 100).toFixed(2)} pawns). Conceded the advantage. Best was ${bestMoveSan}.`,
       sign: MOVE_QUALITY_SIGNS.mistake,
       evalLoss,
+      accuracy,
     };
   }
 
-  // 7. Blunder (genuinely large evaluation loss or throwing a winning/equal position into a loss)
+  // 8. Check for Missed Win (had decisive winning advantage >= +3.0 and dropped it to <= +0.5)
+  if (userEvalBefore >= 300 && userEvalAfter <= 50) {
+    return {
+      classification: 'missed_win',
+      commentary: `Missed Win! Squandered a decisive winning position. Best was ${bestMoveSan}.`,
+      sign: MOVE_QUALITY_SIGNS.missed_win,
+      evalLoss,
+      accuracy,
+    };
+  }
+
+  // 9. Blunder (genuinely large evaluation loss or losing game)
   return {
     classification: 'blunder',
     commentary: `Blunder! Dropped decisive material or evaluation (-${(evalLoss / 100).toFixed(2)} pawns). Best was ${bestMoveSan}.`,
     sign: MOVE_QUALITY_SIGNS.blunder,
     evalLoss,
+    accuracy,
   };
 }

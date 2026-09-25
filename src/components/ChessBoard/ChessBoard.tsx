@@ -12,7 +12,7 @@ interface ChessBoardProps {
   lastMove?: { from: string; to: string } | null;
   moveQualityClassification?: MoveClassification;
   bestMoveHint?: { from: string; to: string } | null;
-  boardTheme?: 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble';
+  boardTheme?: 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble' | 'cobalt';
   showCoordinates?: boolean;
   showLegalMoves?: boolean;
   autoQueen?: boolean;

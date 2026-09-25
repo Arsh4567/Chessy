@@ -2,6 +2,7 @@ import { Chess, Move } from 'chess.js';
 import { BotProfile, MoveClassification, AnalyzedGame, AnalyzedMove, PieceType } from '../types/chess';
 import { stockfish } from './stockfishWorker';
 import { classifyEngineMove } from './moveClassification';
+import { detectOpening } from './openings';
 
 // Standard piece valuation
 const PIECE_VALUES: Record<string, number> = {
@@ -13,43 +14,65 @@ const PIECE_VALUES: Record<string, number> = {
   k: 20000,
 };
 
-// Positional bonuses (Piece-Square Tables simplified)
+// Positional bonuses (Piece-Square Tables normalized for White / flipped for Black)
 const PAWN_TABLE = [
-  0,  0,  0,  0,  0,  0,  0,  0,
-  50, 50, 50, 50, 50, 50, 50, 50,
-  10, 10, 20, 30, 30, 20, 10, 10,
-  5,  5, 10, 25, 25, 10,  5,  5,
-  0,  0,  0, 20, 20,  0,  0,  0,
-  5, -5,-10,  0,  0,-10, -5,  5,
-  5, 10, 10,-20,-20, 10, 10,  5,
-  0,  0,  0,  0,  0,  0,  0,  0
+  0,   0,   0,   0,   0,   0,   0,   0,
+  50,  50,  50,  50,  50,  50,  50,  50,
+  10,  10,  20,  30,  30,  20,  10,  10,
+  5,   5,  10,  25,  25,  10,   5,   5,
+  0,   0,   0,  20,  20,   0,   0,   0,
+  5,  -5, -10,   0,   0, -10,  -5,   5,
+  5,  10,  10, -20, -20,  10,  10,   5,
+  0,   0,   0,   0,   0,   0,   0,   0
 ];
 
 const KNIGHT_TABLE = [
-  -50,-40,-30,-30,-30,-30,-40,-50,
-  -40,-20,  0,  0,  0,  0,-20,-40,
-  -30,  0, 10, 15, 15, 10,  0,-30,
-  -30,  5, 15, 20, 20, 15,  5,-30,
-  -30,  0, 15, 20, 20, 15,  0,-30,
-  -30,  5, 10, 15, 15, 10,  5,-30,
-  -40,-20,  0,  5,  5,  0,-20,-40,
-  -50,-40,-30,-30,-30,-30,-40,-50,
+  -50, -40, -30, -30, -30, -30, -40, -50,
+  -40, -20,   0,   0,   0,   0, -20, -40,
+  -30,   0,  10,  15,  15,  10,   0, -30,
+  -30,   5,  15,  20,  20,  15,   5, -30,
+  -30,   0,  15,  20,  20,  15,   0, -30,
+  -30,   5,  10,  15,  15,  10,   5, -30,
+  -40, -20,   0,   5,   5,   0, -20, -40,
+  -50, -40, -30, -30, -30, -30, -40, -50,
 ];
 
 const BISHOP_TABLE = [
-  -20,-10,-10,-10,-10,-10,-10,-20,
-  -10,  0,  0,  0,  0,  0,  0,-10,
-  -10,  0,  5, 10, 10,  5,  0,-10,
-  -10,  5,  5, 10, 10,  5,  5,-10,
-  -10,  0, 10, 10, 10, 10,  0,-10,
-  -10, 10, 10, 10, 10, 10, 10,-10,
-  -10,  5,  0,  0,  0,  0,  5,-10,
-  -20,-10,-10,-10,-10,-10,-10,-20,
+  -20, -10, -10, -10, -10, -10, -10, -20,
+  -10,   0,   0,   0,   0,   0,   0, -10,
+  -10,   0,   5,  10,  10,   5,   0, -10,
+  -10,   5,   5,  10,  10,   5,   5, -10,
+  -10,   0,  10,  10,  10,  10,   0, -10,
+  -10,  10,  10,  10,  10,  10,  10, -10,
+  -10,   5,   0,   0,   0,   0,   5, -10,
+  -20, -10, -10, -10, -10, -10, -10, -20,
+];
+
+const ROOK_TABLE = [
+  0,   0,   0,   0,   0,   0,   0,   0,
+  5,  10,  10,  10,  10,  10,  10,   5,
+ -5,   0,   0,   0,   0,   0,   0,  -5,
+ -5,   0,   0,   0,   0,   0,   0,  -5,
+ -5,   0,   0,   0,   0,   0,   0,  -5,
+ -5,   0,   0,   0,   0,   0,   0,  -5,
+ -5,   0,   0,   0,   0,   0,   0,  -5,
+  0,   0,   0,   5,   5,   0,   0,   0
+];
+
+const KING_MIDDLE_TABLE = [
+  -30, -40, -40, -50, -50, -40, -40, -30,
+  -30, -40, -40, -50, -50, -40, -40, -30,
+  -30, -40, -40, -50, -50, -40, -40, -30,
+  -30, -40, -40, -50, -50, -40, -40, -30,
+  -20, -30, -30, -40, -40, -30, -30, -20,
+  -10, -20, -20, -20, -20, -20, -20, -10,
+   20,  20,   0,   0,   0,   0,  20,  20,
+   20,  30,  10,   0,   0,  10,  30,  20
 ];
 
 /**
  * Fast static evaluation in centipawns
- * Positive = White advantage, Negative = Black advantage
+ * Symmetrical and turn-invariant: Positive = White advantage, Negative = Black advantage
  */
 export function evaluateBoard(chess: Chess): number {
   if (chess.isCheckmate()) {
@@ -71,9 +94,11 @@ export function evaluateBoard(chess: Chess): number {
       let posVal = 0;
       const squareIdx = piece.color === 'w' ? r * 8 + c : (7 - r) * 8 + c;
 
-      if (piece.type === 'p') posVal = PAWN_TABLE[squareIdx];
-      else if (piece.type === 'n') posVal = KNIGHT_TABLE[squareIdx];
-      else if (piece.type === 'b') posVal = BISHOP_TABLE[squareIdx];
+      if (piece.type === 'p') posVal = PAWN_TABLE[squareIdx] || 0;
+      else if (piece.type === 'n') posVal = KNIGHT_TABLE[squareIdx] || 0;
+      else if (piece.type === 'b') posVal = BISHOP_TABLE[squareIdx] || 0;
+      else if (piece.type === 'r') posVal = ROOK_TABLE[squareIdx] || 0;
+      else if (piece.type === 'k') posVal = KING_MIDDLE_TABLE[squareIdx] || 0;
 
       const pieceTotal = baseVal + posVal;
       if (piece.color === 'w') {
@@ -84,10 +109,6 @@ export function evaluateBoard(chess: Chess): number {
     }
   }
 
-  // Mobility bonus (number of legal moves)
-  const mobility = chess.moves().length;
-  evaluation += (chess.turn() === 'w' ? 1 : -1) * mobility * 5;
-
   return evaluation;
 }
 
@@ -95,13 +116,14 @@ export function evaluateBoard(chess: Chess): number {
  * Quiescence search to avoid the horizon effect
  */
 function quiescence(chess: Chess, alpha: number, beta: number, depth: number): number {
-  const standPat = (chess.turn() === 'w' ? 1 : -1) * evaluateBoard(chess);
-  if (depth > 4) return standPat;
+  const isWhite = chess.turn() === 'w';
+  const standPat = isWhite ? evaluateBoard(chess) : -evaluateBoard(chess);
+  if (depth > 3) return standPat;
 
   if (standPat >= beta) return beta;
   if (alpha < standPat) alpha = standPat;
 
-  const captureMoves = chess.moves({ verbose: true }).filter(m => m.captured);
+  const captureMoves = chess.moves({ verbose: true }).filter((m) => m.captured);
   for (const move of captureMoves) {
     try {
       chess.move(move);
@@ -117,6 +139,9 @@ function quiescence(chess: Chess, alpha: number, beta: number, depth: number): n
   return alpha;
 }
 
+/**
+ * Minimax search with alpha-beta pruning and move ordering
+ */
 export function minimax(
   chess: Chess,
   depth: number,
@@ -129,12 +154,16 @@ export function minimax(
   }
 
   const moves = chess.moves({ verbose: true });
-  // Move ordering: sort captures and checks first
+  if (moves.length === 0) {
+    return { score: evaluateBoard(chess) };
+  }
+
+  // Move ordering: sort captures and promotions first
   moves.sort((a, b) => {
     let scoreA = 0;
     let scoreB = 0;
-    if (a.captured) scoreA += PIECE_VALUES[a.captured] * 10 - PIECE_VALUES[a.piece];
-    if (b.captured) scoreB += PIECE_VALUES[b.captured] * 10 - PIECE_VALUES[b.piece];
+    if (a.captured) scoreA += (PIECE_VALUES[a.captured] || 0) * 10 - (PIECE_VALUES[a.piece] || 0);
+    if (b.captured) scoreB += (PIECE_VALUES[b.captured] || 0) * 10 - (PIECE_VALUES[b.piece] || 0);
     if (a.promotion) scoreA += 800;
     if (b.promotion) scoreB += 800;
     return scoreB - scoreA;
@@ -193,63 +222,31 @@ export function getBotMove(chess: Chess, bot: BotProfile): Move | null {
   // Intentional inaccuracy / blunder rate based on Elo
   const shouldBlunder = Math.random() < bot.blunderRate;
   if (shouldBlunder && legalMoves.length > 1) {
-    // Pick random move among legal moves
-    return legalMoves[Math.floor(Math.random() * legalMoves.length)];
+    // Pick random non-optimal move among legal moves
+    const sortedMoves = [...legalMoves].sort(() => Math.random() - 0.5);
+    return sortedMoves[0];
   }
 
   // Calculate move using minimax
-  const depth = bot.depth || 2;
   const isWhite = chess.turn() === 'w';
+  const depth = Math.max(1, Math.min(bot.depth, 3));
   const result = minimax(chess, depth, -Infinity, Infinity, isWhite);
-
   return result.bestMove || legalMoves[0];
 }
 
-export interface EngineEloTuning {
-  elo: number;
-  skillLevel: number;
-  depth: number;
-  moveTimeMs: number;
-  blunderRate: number;
-  description: string;
-}
-
 /**
- * Calibrates Stockfish engine parameters to match a selected Elo rating (400 - 2800)
+ * High-performance bot move dispatcher
  */
-export function tuneStockfishForElo(elo: number): EngineEloTuning {
-  const clampedElo = Math.max(400, Math.min(2800, Math.round(elo)));
-  const skillLevel = Math.max(0, Math.min(20, Math.round(((clampedElo - 400) / 2400) * 20)));
-  const depth = Math.max(2, Math.min(22, Math.round(2 + ((clampedElo - 400) / 2400) * 20)));
-  const moveTimeMs = Math.round(400 + ((clampedElo - 400) / 2400) * 1600);
-  const blunderRate = Math.max(0, (2600 - clampedElo) / 3000);
-
-  let description = 'Calibrated Engine';
-  if (clampedElo < 800) description = 'Beginner: occasional mistakes, natural human pace';
-  else if (clampedElo < 1200) description = 'Casual: solid basics, handles fundamental tactics';
-  else if (clampedElo < 1600) description = 'Club: active positional play, standard openings';
-  else if (clampedElo < 2000) description = 'Expert: sharp tactical calculation and defense';
-  else if (clampedElo < 2400) description = 'Master: deep strategic plans, high precision';
-  else description = 'Grandmaster: ruthless tactical accuracy and endgame mastery';
-
-  return { elo: clampedElo, skillLevel, depth, moveTimeMs, blunderRate, description };
-}
-
-/**
- * Gets real Stockfish move using WebAssembly worker calibrated to the bot's Elo
- */
-export async function getStockfishMoveAsync(
+export async function getBestMoveAsync(
   chess: Chess,
-  bot: BotProfile,
-  customMoveTimeMs?: number
+  bot: BotProfile
 ): Promise<{ from: string; to: string; promotion?: string }> {
   try {
-    const tuning = tuneStockfishForElo(bot.elo);
-    const moveTime = customMoveTimeMs || tuning.moveTimeMs;
+    const tuning = getStockfishTuningForBot(bot);
+    const moveTime = 350;
 
     const sfMove = await stockfish.getBestMove(chess.fen(), tuning.skillLevel, tuning.depth, moveTime);
     if (sfMove && sfMove.from && sfMove.to) {
-      // Validate with chess.js against current game state
       const test = new Chess(chess.fen());
       try {
         const valid = test.move({ from: sfMove.from, to: sfMove.to, promotion: sfMove.promotion });
@@ -275,6 +272,58 @@ export async function getStockfishMoveAsync(
     : { from: '', to: '' };
 }
 
+export const getStockfishMoveAsync = getBestMoveAsync;
+
+export function tuneStockfishForElo(elo: number): {
+  skillLevel: number;
+  depth: number;
+  blunderRate: number;
+  description: string;
+} {
+  if (elo <= 800) {
+    return {
+      skillLevel: 1,
+      depth: 3,
+      blunderRate: 0.25,
+      description: 'Beginner-level play with occasional tactical oversights.',
+    };
+  }
+  if (elo <= 1200) {
+    return {
+      skillLevel: 5,
+      depth: 6,
+      blunderRate: 0.12,
+      description: 'Casual club player with basic tactical awareness.',
+    };
+  }
+  if (elo <= 1600) {
+    return {
+      skillLevel: 10,
+      depth: 9,
+      blunderRate: 0.05,
+      description: 'Intermediate player with strong piece coordination.',
+    };
+  }
+  if (elo <= 2000) {
+    return {
+      skillLevel: 15,
+      depth: 12,
+      blunderRate: 0.01,
+      description: 'Expert club player with high positional understanding.',
+    };
+  }
+  return {
+    skillLevel: 20,
+    depth: 16,
+    blunderRate: 0.0,
+    description: 'Master/Grandmaster strength calculation with deep tactical depth.',
+  };
+}
+
+function getStockfishTuningForBot(bot: BotProfile): { skillLevel: number; depth: number } {
+  return tuneStockfishForElo(bot.elo);
+}
+
 /**
  * Converts centipawns to winning percentage (0 - 100)
  */
@@ -283,7 +332,7 @@ export function centipawnsToWinProb(cp: number): number {
 }
 
 /**
- * Full game analysis algorithm
+ * Full game analysis algorithm with accurate eval loss and blunder detection
  */
 export function analyzeMatch(
   historyMoves: { from: string; to: string; promotion?: string }[],
@@ -320,17 +369,20 @@ export function analyzeMatch(
   // Reset to start of moves
   sim.reset();
 
+  const sanHistory: string[] = [];
+
   for (let i = 0; i < historyMoves.length; i++) {
     const m = historyMoves[i];
-    const turn = sim.turn(); // Turn BEFORE move
-    const evalBefore = evaluateBoard(sim);
+    const turn = sim.turn(); // Turn BEFORE move ('w' or 'b')
     const moveNumber = Math.floor(i / 2) + 1;
 
-    // Calculate best move before player moved
-    const bestMoveResult = minimax(sim, 2, -Infinity, Infinity, turn === 'w');
+    // 1. Calculate best move and searched position evaluation before move
+    const isWhite = turn === 'w';
+    const bestMoveResult = minimax(sim, 2, -Infinity, Infinity, isWhite);
     const bestMoveSan = bestMoveResult.bestMove?.san || '';
+    const bestMoveScore = bestMoveResult.score; // Centipawns from White's perspective
 
-    // Position clone before move for tactical checks
+    // Clone position before move
     const beforeClone = new Chess(sim.fen());
 
     // Execute player move safely
@@ -342,40 +394,49 @@ export function analyzeMatch(
     }
     if (!moveResult) break;
 
-    const evalAfter = evaluateBoard(sim);
-    const evalDelta = turn === 'w' ? (evalAfter - evalBefore) : (evalBefore - evalAfter);
+    sanHistory.push(moveResult.san);
 
-    // Classify move with real engine rules, actual eval loss & context scaling
-    const { classification, commentary, evalLoss } = classifyEngineMove(
+    // 2. Calculate searched evaluation of the position AFTER the move
+    const playedMoveSearch = minimax(sim, 2, -Infinity, Infinity, sim.turn() === 'w');
+    const playedMoveScore = playedMoveSearch.score; // Centipawns from White's perspective
+
+    // 3. Check for standard opening theory in first 10 moves
+    const isBookMove = moveNumber <= 10 && Boolean(detectOpening(sanHistory));
+
+    // 4. Classify move with real engine rules, searched evaluations & context scaling
+    const { classification, commentary, evalLoss, accuracy } = classifyEngineMove(
       beforeClone,
       moveResult,
-      evalBefore,
-      evalAfter,
+      bestMoveScore,
+      playedMoveScore,
       bestMoveSan,
-      moveNumber
+      moveNumber,
+      isBookMove ? { isBookOpeningMove: true } : undefined
     );
 
     // Track classification counts
     if (turn === 'w') {
       if (classification === 'brilliant') whiteBrilliants++;
-      else if (classification === 'best') whiteBests++;
+      else if (classification === 'great') whiteBests++;
+      else if (classification === 'best' || classification === 'book') whiteBests++;
       else if (classification === 'excellent') whiteExcellents++;
       else if (classification === 'good') whiteGoods++;
       else if (classification === 'inaccuracy') whiteInaccuracies++;
       else if (classification === 'mistake') whiteMistakes++;
-      else if (classification === 'blunder') whiteBlunders++;
+      else if (classification === 'blunder' || classification === 'missed_win') whiteBlunders++;
     } else {
       if (classification === 'brilliant') blackBrilliants++;
-      else if (classification === 'best') blackBests++;
+      else if (classification === 'great') blackBests++;
+      else if (classification === 'best' || classification === 'book') blackBests++;
       else if (classification === 'excellent') blackExcellents++;
       else if (classification === 'good') blackGoods++;
       else if (classification === 'inaccuracy') blackInaccuracies++;
       else if (classification === 'mistake') blackMistakes++;
-      else if (classification === 'blunder') blackBlunders++;
+      else if (classification === 'blunder' || classification === 'missed_win') blackBlunders++;
     }
 
     // Move accuracy calculation based on actual evaluation loss
-    const moveAcc = Math.max(0, Math.min(100, 100 - evalLoss * 0.35));
+    const moveAcc = accuracy;
     if (turn === 'w') {
       whiteAccuracySum += moveAcc;
       whiteMovesCount++;
@@ -393,20 +454,20 @@ export function analyzeMatch(
       captured: moveResult.captured as PieceType | undefined,
       promotion: moveResult.promotion as PieceType | undefined,
       fen: sim.fen(),
-      eval: +(evalAfter / 100).toFixed(2),
+      eval: +(playedMoveScore / 100).toFixed(2),
       bestMoveSan,
       classification,
       commentary,
     });
   }
 
-  const whiteAccuracy = whiteMovesCount > 0 ? +(whiteAccuracySum / whiteMovesCount).toFixed(1) : 85.0;
-  const blackAccuracy = blackMovesCount > 0 ? +(blackAccuracySum / blackMovesCount).toFixed(1) : 85.0;
+  const whiteAccuracy = whiteMovesCount > 0 ? +(whiteAccuracySum / whiteMovesCount).toFixed(1) : 100;
+  const blackAccuracy = blackMovesCount > 0 ? +(blackAccuracySum / blackMovesCount).toFixed(1) : 100;
 
   return {
+    analyzedMoves,
     whiteAccuracy,
     blackAccuracy,
-    analyzedMoves,
     whiteBrilliants,
     blackBrilliants,
     whiteBests,
@@ -424,5 +485,9 @@ export function analyzeMatch(
   };
 }
 
-export const analyzeGame = analyzeMatch;
-
+export function analyzeGame(
+  historyMoves: { from: string; to: string; promotion?: string }[],
+  initialPgn?: string
+): AnalyzedGame {
+  return analyzeMatch(historyMoves, initialPgn);
+}

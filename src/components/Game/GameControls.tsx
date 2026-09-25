@@ -11,8 +11,8 @@ interface GameControlsProps {
   onRequestHint: () => void;
   isMuted: boolean;
   onToggleMute: () => void;
-  currentTheme: 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble';
-  onChangeTheme: (theme: 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble') => void;
+  currentTheme: 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble' | 'cobalt';
+  onChangeTheme: (theme: 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble' | 'cobalt') => void;
   disabled?: boolean;
 }
 

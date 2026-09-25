@@ -1,5 +1,5 @@
 import React from 'react';
-import { Swords, Bot, Search, Zap, BarChart2, FileText, Settings } from 'lucide-react';
+import { Swords, Bot, Search, Zap, LayoutDashboard, FileText, Settings } from 'lucide-react';
 
 export type NavTab = 'play' | 'bots' | 'review' | 'puzzles' | 'stats' | 'report';
 
@@ -20,20 +20,32 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
         {/* Brand */}
         <button
-          onClick={() => onSelectTab('play')}
-          className="flex items-center gap-2 text-slate-100 hover:text-amber-400 transition-colors cursor-pointer group"
+          onClick={() => onSelectTab('stats')}
+          className="flex items-center gap-2 text-slate-100 hover:text-emerald-400 transition-colors cursor-pointer group"
         >
           <span className="text-xl group-hover:scale-110 transition-transform">♚</span>
           <span className="text-sm font-black font-display tracking-wider uppercase">Chess</span>
         </button>
 
-        {/* Short Clean Nav */}
+        {/* Short Clean Nav with Dashboard First */}
         <nav className="flex items-center gap-1 sm:gap-2">
+          <button
+            onClick={() => onSelectTab('stats')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              currentTab === 'stats'
+                ? 'bg-emerald-500 text-slate-950 shadow-md'
+                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
+            }`}
+          >
+            <LayoutDashboard className="w-3.5 h-3.5" />
+            <span>Dashboard</span>
+          </button>
+
           <button
             onClick={() => onSelectTab('play')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               currentTab === 'play'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
+                ? 'bg-emerald-500 text-slate-950 shadow-md'
                 : 'text-slate-300 hover:bg-slate-900 hover:text-white'
             }`}
           >
@@ -45,7 +57,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => onSelectTab('bots')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               currentTab === 'bots'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
+                ? 'bg-emerald-500 text-slate-950 shadow-md'
                 : 'text-slate-300 hover:bg-slate-900 hover:text-white'
             }`}
           >
@@ -57,7 +69,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => onSelectTab('puzzles')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               currentTab === 'puzzles'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
+                ? 'bg-emerald-500 text-slate-950 shadow-md'
                 : 'text-slate-300 hover:bg-slate-900 hover:text-white'
             }`}
           >
@@ -69,7 +81,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => onSelectTab('review')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               currentTab === 'review'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
+                ? 'bg-emerald-500 text-slate-950 shadow-md'
                 : 'text-slate-300 hover:bg-slate-900 hover:text-white'
             }`}
           >
@@ -78,22 +90,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
-            onClick={() => onSelectTab('stats')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              currentTab === 'stats'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
-                : 'text-slate-300 hover:bg-slate-900 hover:text-white'
-            }`}
-          >
-            <BarChart2 className="w-3.5 h-3.5" />
-            <span>Games</span>
-          </button>
-
-          <button
             onClick={() => onSelectTab('report')}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               currentTab === 'report'
-                ? 'bg-amber-500 text-slate-950 shadow-md'
+                ? 'bg-emerald-500 text-slate-950 shadow-md'
                 : 'text-slate-300 hover:bg-slate-900 hover:text-white'
             }`}
           >

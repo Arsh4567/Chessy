@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Chess } from 'chess.js';
 import { AnalyzedMove, AnalyzedGame, MoveClassification } from '../../types/chess';
 import { ChessBoard } from '../ChessBoard/ChessBoard';
@@ -6,7 +6,7 @@ import { EvalBar } from '../ChessBoard/EvalBar';
 import { MoveHistory } from '../ChessBoard/MoveHistory';
 import { ChessComExplorer } from '../ChessCom/ChessComExplorer';
 import { OpeningExplorer } from './OpeningExplorer';
-import { analyzeGame } from '../../utils/engine';
+import { parseGameMovesInstantly, analyzeGameProgressively, ProgressiveAnalysisController } from '../../utils/asyncAnalysis';
 import { detectOpening } from '../../utils/openings';
 import { sound } from '../../utils/sound';
 import { stockfish, StockfishEvaluation, formatPvToSan } from '../../utils/stockfishWorker';
@@ -58,9 +58,16 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     scoreCp: 0,
   });
   const [isEngineEvaluating, setIsEngineEvaluating] = useState<boolean>(false);
+  const [analysisProgress, setAnalysisProgress] = useState<number>(100);
+  const [isProgressivelyAnalyzing, setIsProgressivelyAnalyzing] = useState<boolean>(false);
+  const analysisControllerRef = useRef<ProgressiveAnalysisController | null>(null);
 
-  // Continuous Live Stockfish Engine Evaluation for currently selected position
+  // Continuous Live Stockfish Engine Evaluation for currently selected position (when idle or progressive analysis is complete)
   useEffect(() => {
+    if (isProgressivelyAnalyzing) {
+      return;
+    }
+
     const currentFen = chess.fen();
     setIsEngineEvaluating(true);
 
@@ -77,7 +84,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     return () => {
       stopContinuousSearch();
     };
-  }, [chess.fen()]);
+  }, [chess.fen(), isProgressivelyAnalyzing]);
 
   // Live formatted Principal Variation line in SAN notation
   const livePvSan = useMemo(() => {
@@ -92,12 +99,97 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     return null;
   }, [stockfishEval.bestMove]);
 
-  // Initialize or re-analyze game safely without triggering infinite render loops
+  // Helper to start progressive analysis safely
+  const startProgressiveGameAnalysis = useCallback((
+    rawMoves: { from: string; to: string; promotion?: string }[],
+    pgnText?: string
+  ) => {
+    // 1. Abort any previous running background analysis
+    if (analysisControllerRef.current) {
+      analysisControllerRef.current.abort();
+    }
+
+    const rawPgn = pgnText?.trim() || '';
+    
+    // Extract verified moves for both initial render and background evaluation
+    let movesToAnalyze = rawMoves;
+    if (rawPgn && rawMoves.length === 0) {
+      try {
+        const temp = new Chess();
+        temp.loadPgn(rawPgn);
+        movesToAnalyze = temp.history({ verbose: true }).map((h) => ({
+          from: h.from,
+          to: h.to,
+          promotion: h.promotion,
+        }));
+      } catch (err) {
+        console.warn('PGN parse warning:', err);
+      }
+    }
+
+    const movesKey = movesToAnalyze.map((m) => `${m.from}-${m.to}`).join(',');
+    const currentKey = `${rawPgn}::${movesKey}`;
+
+    // 2. Instant (<2ms) parse & render
+    const instantResult = parseGameMovesInstantly(movesToAnalyze, rawPgn || undefined);
+    setAnalyzedData(instantResult);
+
+    if (instantResult.analyzedMoves.length > 0) {
+      const lastIdx = instantResult.analyzedMoves.length - 1;
+      const targetFen = instantResult.analyzedMoves[lastIdx]?.fen;
+      if (targetFen) {
+        setChess(new Chess(targetFen));
+        setCurrentMoveIdx(lastIdx);
+      }
+    } else {
+      setChess(new Chess());
+      setCurrentMoveIdx(-1);
+    }
+
+    if (movesToAnalyze.length === 0) {
+      setIsProgressivelyAnalyzing(false);
+      setAnalysisProgress(100);
+      return;
+    }
+
+    setIsProgressivelyAnalyzing(true);
+    setAnalysisProgress(5);
+
+    // 4. Launch non-blocking background analysis (max 8-10s budget, yields to UI thread)
+    const controller = analyzeGameProgressively(
+      movesToAnalyze,
+      rawPgn || undefined,
+      currentKey,
+      (updatedGame, _currentMoveIdx, progressPercent) => {
+        setAnalyzedData(updatedGame);
+        setAnalysisProgress(progressPercent);
+      },
+      (finalGame) => {
+        setAnalyzedData(finalGame);
+        setAnalysisProgress(100);
+        setIsProgressivelyAnalyzing(false);
+      },
+      { maxBudgetMs: 8000 }
+    );
+
+    analysisControllerRef.current = controller;
+  }, []);
+
+  // Cleanup background analysis on unmount
+  useEffect(() => {
+    return () => {
+      if (analysisControllerRef.current) {
+        analysisControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  // Initialize or re-analyze game safely without blocking main thread
   const initializedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     const rawPgn = initialPgn?.trim() || '';
-    const movesKey = initialMoves.map(m => `${m.from}-${m.to}`).join(',');
+    const movesKey = initialMoves.map((m) => `${m.from}-${m.to}`).join(',');
     const currentKey = `${rawPgn}::${movesKey}`;
 
     if (initializedKeyRef.current === currentKey) {
@@ -105,50 +197,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     }
     initializedKeyRef.current = currentKey;
 
-    if (rawPgn) {
-      try {
-        const temp = new Chess();
-        temp.loadPgn(rawPgn);
-        const history = temp.history({ verbose: true });
-        const rawMoves = history.map((h) => ({
-          from: h.from,
-          to: h.to,
-          promotion: h.promotion,
-        }));
-        const result = analyzeGame(rawMoves);
-        setAnalyzedData(result);
-        if (result.analyzedMoves.length > 0) {
-          const lastIdx = result.analyzedMoves.length - 1;
-          const targetFen = result.analyzedMoves[lastIdx]?.fen;
-          if (targetFen) {
-            setChess(new Chess(targetFen));
-            setCurrentMoveIdx(lastIdx);
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn('Analysis PGN parse warning:', err);
-      }
-    }
-
-    if (initialMoves.length > 0) {
-      try {
-        const result = analyzeGame(initialMoves);
-        setAnalyzedData(result);
-        const lastIdx = result.analyzedMoves.length - 1;
-        if (lastIdx >= 0 && result.analyzedMoves[lastIdx]?.fen) {
-          setChess(new Chess(result.analyzedMoves[lastIdx].fen));
-          setCurrentMoveIdx(lastIdx);
-          return;
-        }
-      } catch (err) {
-        console.warn('Analysis initialMoves warning:', err);
-      }
-    }
-
-    setChess(new Chess());
-    setCurrentMoveIdx(-1);
-  }, [initialMoves, initialPgn]);
+    startProgressiveGameAnalysis(initialMoves, rawPgn);
+  }, [initialMoves, initialPgn, startProgressiveGameAnalysis]);
 
   const jumpToMove = (index: number, movesList?: AnalyzedMove[]) => {
     try {
@@ -169,9 +219,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   };
 
   const handleImportPgn = () => {
+    const pgn = customPgnInput.trim();
+    if (!pgn) return;
     try {
       const importedChess = new Chess();
-      importedChess.loadPgn(customPgnInput.trim());
+      importedChess.loadPgn(pgn);
       const history = importedChess.history({ verbose: true });
       const rawMoves = history.map((h) => ({
         from: h.from,
@@ -179,9 +231,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
         promotion: h.promotion,
       }));
 
-      const result = analyzeGame(rawMoves);
-      setAnalyzedData(result);
-      jumpToMove(rawMoves.length - 1, result.analyzedMoves);
+      startProgressiveGameAnalysis(rawMoves, pgn);
       setShowPgnImport(false);
       setCustomPgnInput('');
     } catch {
@@ -227,6 +277,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
           </button>
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-slate-100">Analysis</span>
+            {isProgressivelyAnalyzing && analysisProgress < 100 && (
+              <div className="flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Evaluating {analysisProgress}%</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -295,9 +351,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                   to: h.to,
                   promotion: h.promotion,
                 }));
-                const result = analyzeGame(rawMoves);
-                setAnalyzedData(result);
-                jumpToMove(rawMoves.length - 1, result.analyzedMoves);
+                startProgressiveGameAnalysis(rawMoves, pgn);
                 setShowChessCom(false);
               } catch {
                 alert('Invalid PGN format in selected Chess.com game.');

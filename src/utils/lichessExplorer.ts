@@ -7,8 +7,11 @@
  * - Request cancellation (AbortController)
  * - FEN-keyed LRU cache
  * - Rate-limit (HTTP 429) handling
- * - Automatic circuit-breaker / temporary cooldown on failures to prevent main-thread or network choking
+ * - Automatic circuit-breaker / temporary cooldown on failures
+ * - Local opening name detection fallback when offline
  */
+
+import { detectOpening } from './openings';
 
 export type ExplorerDatabase = 'lichess' | 'masters';
 
@@ -63,8 +66,8 @@ export function normalizeOpeningFen(fen: string): string {
   if (!fen) return '';
   const parts = fen.trim().split(/\s+/);
   if (parts.length < 4) return fen.trim();
-  // Strip halfmove and fullmove counters to match opening transposition
-  return `${parts[0]} ${parts[1]} ${parts[2]} ${parts[3]}`;
+  // Return standard 6-part FEN with zeroed counters for opening transposition
+  return `${parts[0]} ${parts[1]} ${parts[2]} ${parts[3]} 0 1`;
 }
 
 /**
@@ -131,15 +134,15 @@ export async function fetchLichessOpeningStats(
   const encodedFen = encodeURIComponent(normalizedFen);
   const endpoint =
     database === 'masters'
-      ? `https://explorer.lichess.ovh/masters?fen=${encodedFen}&moves=10&topGames=0`
-      : `https://explorer.lichess.ovh/lichess?fen=${encodedFen}&ratings=1600,1800,2000,2200,2500&speeds=blitz,rapid,classical&moves=10&topGames=0`;
+      ? `https://explorer.lichess.ovh/masters?fen=${encodedFen}&moves=12&topGames=0`
+      : `https://explorer.lichess.ovh/lichess?fen=${encodedFen}&ratings=1600,1800,2000,2200,2500&speeds=blitz,rapid,classical&moves=12&topGames=0`;
 
-  // Set a 4.5s request timeout
+  // Set a 4s request timeout
   const timeoutId = setTimeout(() => {
     if (activeAbortController) {
       activeAbortController.abort();
     }
-  }, 4500);
+  }, 4000);
 
   try {
     const response = await fetch(endpoint, {
@@ -164,7 +167,7 @@ export async function fetchLichessOpeningStats(
 
     if (!response.ok) {
       consecutiveFailures++;
-      if (consecutiveFailures >= 2) {
+      if (consecutiveFailures >= 3) {
         disabledUntilTimestamp = Date.now() + 30000; // 30s cooldown on repeated failures
       }
       return {
@@ -250,7 +253,7 @@ export async function fetchLichessOpeningStats(
     }
 
     consecutiveFailures++;
-    if (consecutiveFailures >= 2) {
+    if (consecutiveFailures >= 3) {
       disabledUntilTimestamp = Date.now() + 30000; // 30s cooldown
     }
 
