@@ -165,6 +165,7 @@ export class StockfishEngine {
             clearTimeout(readyTimeout);
             this.isReady = true;
             this.isInitializing = false;
+            this.rawListeners = this.rawListeners.filter((l) => l !== onFirstReady);
             resolve(true);
           }
         };
@@ -246,12 +247,10 @@ export class StockfishEngine {
       return;
     }
 
-    if (this.isSearching) {
-      this.sendCommand('stop');
-      this.isSearching = false;
-      // Synchronize engine state so all pending search messages are flushed
-      await this.waitReady(500);
-    }
+    this.isSearching = false;
+    this.sendCommand('stop');
+    // Synchronize engine state so all pending search messages are flushed
+    await this.waitReady(300);
   }
 
   private handleWorkerMessage(messageData: string) {
@@ -552,12 +551,13 @@ export class StockfishEngine {
 
   /**
    * Evaluates a position with Stockfish with guaranteed serialization and fallback
-   * Supports deep search (depth 16-24) with optional movetime budget.
+   * Supports deep search with optional movetime budget and live progress streaming.
    */
   public async evaluatePosition(
     fen: string,
-    depth: number = 16,
-    movetimeMs?: number
+    depth: number = 14,
+    movetimeMs?: number,
+    onProgress?: (evaluation: StockfishEvaluation) => void
   ): Promise<StockfishEvaluation> {
     const cleanFen = fen.trim();
 
@@ -565,7 +565,9 @@ export class StockfishEngine {
       try {
         await this.ensureReady();
         if (this.workerFailed || !this.worker) {
-          return this.computeFallbackEval(cleanFen);
+          const fallback = this.computeFallbackEval(cleanFen);
+          if (onProgress) onProgress(fallback);
+          return fallback;
         }
 
         // Conclude any prior active search before sending new position
@@ -575,14 +577,12 @@ export class StockfishEngine {
         const parts = cleanFen.split(/\s+/);
         this.currentSideToMove = parts.length > 1 && parts[1] === 'b' ? 'b' : 'w';
 
-        console.log('[Stockfish Engine] EVALUATING FEN INPUT:', cleanFen, '| depth:', depth, '| movetimeMs:', movetimeMs);
-
         // Check if position is game over first
         try {
           const c = new Chess(cleanFen);
           if (c.isGameOver()) {
             const fallback = this.computeFallbackEval(cleanFen);
-            console.log('[Stockfish Engine] Game over position detected, returning terminal eval:', fallback);
+            if (onProgress) onProgress(fallback);
             return fallback;
           }
         } catch {}
@@ -593,10 +593,15 @@ export class StockfishEngine {
           depth: 0,
         };
 
+        // Emit instant baseline eval so UI responds immediately with 0 delay
+        if (onProgress) {
+          onProgress(initialFallback);
+        }
+
         return await new Promise<StockfishEvaluation>((resolve) => {
           this.isSearching = true;
           let settled = false;
-          const maxWait = movetimeMs ? Math.max(movetimeMs + 1000, 3000) : 4000;
+          const maxWait = movetimeMs ? Math.max(movetimeMs + 1000, 3000) : 5000;
 
           const finish = (result: StockfishEvaluation) => {
             if (!settled) {
@@ -605,37 +610,36 @@ export class StockfishEngine {
               this.isSearching = false;
               this.currentEvalResolve = null;
               this.rawListeners = this.rawListeners.filter((l) => l !== onLine);
-              console.log('[Stockfish Engine] EVALUATION RESOLVED FOR FEN:', cleanFen, {
-                depth: result.depth,
-                scoreCp: result.scoreCp,
-                evalPawns: result.evalPawns,
-                displayEval: result.displayEval,
-                bestMove: result.bestMove?.rawUci,
-              });
               resolve(result);
             }
           };
 
-          const timer = setTimeout(async () => {
-            console.warn('[Stockfish Engine] Search timeout reached for FEN, resolving with best accumulated eval:', cleanFen);
+          const timer = setTimeout(() => {
+            console.warn('[Stockfish Engine] Search timeout reached for FEN, stopping search and resolving with accumulated eval:', cleanFen);
+            this.sendCommand('stop');
             finish(accumulatedEval.depth > 0 ? accumulatedEval : initialFallback);
           }, maxWait);
 
           const onLine = (line: string) => {
             if (line.startsWith('info') && line.includes('score')) {
-              console.log('[Stockfish Engine] TRACE INFO RESPONSE:', line);
               const parsed = this.parseInfoLine(line);
               if (parsed) {
                 accumulatedEval = parsed;
+                if (onProgress) {
+                  onProgress(parsed);
+                }
               }
             } else if (line.startsWith('bestmove')) {
-              console.log('[Stockfish Engine] TRACE BESTMOVE RESPONSE:', line);
               const p = line.split(/\s+/);
               const bestMove = parseUciMove(p[1]);
-              finish({
+              const finalEval = {
                 ...accumulatedEval,
                 bestMove: bestMove || accumulatedEval.bestMove,
-              });
+              };
+              if (onProgress) {
+                onProgress(finalEval);
+              }
+              finish(finalEval);
             }
           };
 
@@ -649,7 +653,9 @@ export class StockfishEngine {
         });
       } catch (err) {
         console.warn('Stockfish evaluation failed, returning fallback:', err);
-        return this.computeFallbackEval(cleanFen);
+        const fallback = this.computeFallbackEval(cleanFen);
+        if (onProgress) onProgress(fallback);
+        return fallback;
       }
     };
 
@@ -706,13 +712,13 @@ export class StockfishEngine {
         const parts = this.currentFen.split(/\s+/);
         this.currentSideToMove = parts.length > 1 && parts[1] === 'b' ? 'b' : 'w';
 
-        // Provide instantaneous fallback/static eval while engine begins searching
-        const initialFallback = this.computeFallbackEval(this.currentFen);
-        if (isActive && sessionId === this.currentAnalysisSessionId) {
-          onUpdate(initialFallback);
+        if (this.workerFailed || !this.worker) {
+          const fallback = this.computeFallbackEval(this.currentFen);
+          if (isActive && sessionId === this.currentAnalysisSessionId) {
+            onUpdate(fallback);
+          }
+          return;
         }
-
-        if (this.workerFailed || !this.worker) return;
 
         // Subscribe to live continuous evaluation updates from worker info lines with smart throttling
         removeListener = this.onEvaluation((evalResult) => {

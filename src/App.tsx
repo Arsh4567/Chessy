@@ -233,7 +233,14 @@ export default function App() {
 
     setIsEvaluating(true);
     try {
-      const result = await stockfish.evaluatePosition(fen, targetDepth);
+      const result = await stockfish.evaluatePosition(
+        fen,
+        targetDepth,
+        2500,
+        (liveEval) => {
+          setStockfishEval(liveEval);
+        }
+      );
       if (result) {
         setStockfishEval(result);
         return result;
@@ -949,6 +956,7 @@ export default function App() {
                   <LichessMasters
                     lichessData={lichessData}
                     stockfishEval={stockfishEval}
+                    currentFen={chess.fen()}
                     onSelectMove={(san) => {
                       if (inActiveMatch && isCurrentTurnHuman) {
                         try {

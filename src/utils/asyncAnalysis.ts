@@ -407,7 +407,7 @@ export function analyzeGameProgressively(
           evalBefore: +(beforeScore / 100).toFixed(2),
           evalLoss: +(evalLoss / 100).toFixed(2),
           bestMoveSan,
-          bestMove: currentEval.bestMove,
+          bestMove: prevEval.bestMove,
           depth: currentEval.depth,
           mate: currentEval.mate,
           classification,

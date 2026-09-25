@@ -10,6 +10,7 @@ export interface LichessMastersProps {
   onSelectMove?: (san: string) => void;
   isLoading?: boolean;
   className?: string;
+  currentFen?: string;
 }
 
 export const LichessMasters: React.FC<LichessMastersProps> = ({
@@ -18,6 +19,7 @@ export const LichessMasters: React.FC<LichessMastersProps> = ({
   onSelectMove,
   isLoading = false,
   className = '',
+  currentFen,
 }) => {
   const moves = lichessData?.moves || [];
   const openingName = lichessData?.opening?.name;
@@ -68,9 +70,10 @@ export const LichessMasters: React.FC<LichessMastersProps> = ({
     if (typeof bm === 'string' && !/^[a-h][1-8][a-h][1-8]/.test(bm)) {
       return bm.trim();
     }
-    if (!lichessData?.fen) return null;
+    const targetFen = currentFen || lichessData?.fen;
+    if (!targetFen) return null;
     try {
-      const c = new Chess(lichessData.fen);
+      const c = new Chess(targetFen);
       if (bm.from && bm.to) {
         const res = c.move({
           from: bm.from,
@@ -90,7 +93,7 @@ export const LichessMasters: React.FC<LichessMastersProps> = ({
       return null;
     }
     return null;
-  }, [stockfishEval?.bestMove, lichessData?.fen, bestMoveUci]);
+  }, [stockfishEval?.bestMove, currentFen, lichessData?.fen, bestMoveUci]);
 
   // Check if a move matches the latest stockfishEval bestMove
   const isMatchBestMove = (m: LichessExplorerMove): boolean => {

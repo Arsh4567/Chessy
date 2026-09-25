@@ -103,7 +103,13 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     const stopContinuousSearch = stockfish.startContinuousAnalysis(
       currentFen,
       (liveEval) => {
-        setStockfishEval(liveEval);
+        setStockfishEval((prev) => {
+          // If we already have a deep evaluation from analyzedData for this move, only override if liveEval reaches that depth or higher
+          if (prev.depth > liveEval.depth && liveEval.depth < 10) {
+            return prev;
+          }
+          return liveEval;
+        });
         if (liveEval.depth >= 1) {
           setIsEngineEvaluating(false);
         }
@@ -122,11 +128,14 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
   // Dynamic live best move hint from Stockfish
   const activeBestMoveHint = useMemo(() => {
+    if (currentMove?.bestMove) {
+      return { from: currentMove.bestMove.from, to: currentMove.bestMove.to };
+    }
     if (stockfishEval.bestMove) {
       return { from: stockfishEval.bestMove.from, to: stockfishEval.bestMove.to };
     }
     return null;
-  }, [stockfishEval.bestMove]);
+  }, [currentMove?.bestMove, stockfishEval.bestMove]);
 
   // Helper to start progressive analysis safely
   const startProgressiveGameAnalysis = useCallback((
