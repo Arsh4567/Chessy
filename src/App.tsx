@@ -37,14 +37,28 @@ import { MoveHistory } from './components/ChessBoard/MoveHistory';
 import { PlayerCard } from './components/Game/PlayerCard';
 import { GameControls } from './components/Game/GameControls';
 import { GameOverModal } from './components/Game/GameOverModal';
-import { AnalysisView } from './components/Analysis/AnalysisView';
 import { LichessMasters } from './components/Analysis/LichessMasters';
-import { BotSelection } from './components/Bots/BotSelection';
-import { PuzzleTrainer } from './components/Puzzles/PuzzleTrainer';
-import { StatsView } from './components/Stats/StatsView';
-import { PersonalReportView } from './components/Report/PersonalReportView';
-import { SettingsModal } from './components/Settings/SettingsModal';
 import { fetchChessComRecentGames, ChessComGame, ChessComPlayer } from './utils/chessComApi';
+
+// Lazy loaded views to minimize initial bundle size and main-thread execution
+const AnalysisView = React.lazy(() =>
+  import('./components/Analysis/AnalysisView').then((m) => ({ default: m.AnalysisView }))
+);
+const BotSelection = React.lazy(() =>
+  import('./components/Bots/BotSelection').then((m) => ({ default: m.BotSelection }))
+);
+const PuzzleTrainer = React.lazy(() =>
+  import('./components/Puzzles/PuzzleTrainer').then((m) => ({ default: m.PuzzleTrainer }))
+);
+const StatsView = React.lazy(() =>
+  import('./components/Stats/StatsView').then((m) => ({ default: m.StatsView }))
+);
+const PersonalReportView = React.lazy(() =>
+  import('./components/Report/PersonalReportView').then((m) => ({ default: m.PersonalReportView }))
+);
+const SettingsModal = React.lazy(() =>
+  import('./components/Settings/SettingsModal').then((m) => ({ default: m.SettingsModal }))
+);
 
 import { 
   Play, 
@@ -990,36 +1004,142 @@ export default function App() {
           </div>
         ) : activeTab === 'bots' ? (
           /* Bots Picker */
-          <BotSelection onStartBotGame={handleStartBotGame} />
+          <React.Suspense fallback={<div className="flex-1 flex items-center justify-center p-12 text-slate-400 text-xs font-mono"><span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mr-2" /> Loading Bots...</div>}>
+            <BotSelection onStartBotGame={handleStartBotGame} />
+          </React.Suspense>
         ) : activeTab === 'review' ? (
           /* Review with Stockfish */
-          <AnalysisView
-            initialMoves={analysisInitialMoves}
-            initialPgn={reviewPgn || chess.pgn()}
-            onExitAnalysis={() => setActiveTab('play')}
-          />
+          <React.Suspense fallback={<div className="flex-1 flex items-center justify-center p-12 text-slate-400 text-xs font-mono"><span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mr-2" /> Loading Analysis...</div>}>
+            <AnalysisView
+              initialMoves={analysisInitialMoves}
+              initialPgn={reviewPgn || chess.pgn()}
+              onExitAnalysis={() => setActiveTab('play')}
+            />
+          </React.Suspense>
         ) : activeTab === 'puzzles' ? (
           /* Tactical Puzzle Trainer */
-          <PuzzleTrainer
-            puzzleRating={stats.puzzleRating}
-            onUpdatePuzzleRating={(newR) => {
-              const delta = newR - stats.puzzleRating;
-              const updated = recordPuzzleSolved(delta);
-              setStats(updated);
-            }}
-          />
+          <React.Suspense fallback={<div className="flex-1 flex items-center justify-center p-12 text-slate-400 text-xs font-mono"><span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mr-2" /> Loading Puzzles...</div>}>
+            <PuzzleTrainer
+              puzzleRating={stats.puzzleRating}
+              onUpdatePuzzleRating={(newR) => {
+                const delta = newR - stats.puzzleRating;
+                const updated = recordPuzzleSolved(delta);
+                setStats(updated);
+              }}
+            />
+          </React.Suspense>
         ) : activeTab === 'report' ? (
           /* Personal Chess Report from Chess.com Games */
-          chessComGames.length > 0 ? (
-            <PersonalReportView
-              games={chessComGames}
-              player={chessComPlayer}
-              username={chessComUsername}
-              isLoading={isReportLoading}
-              onRefreshGames={() => {
-                if (chessComUsername) fetchGamesForReport(chessComUsername);
+          <React.Suspense fallback={<div className="flex-1 flex items-center justify-center p-12 text-slate-400 text-xs font-mono"><span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mr-2" /> Generating Report...</div>}>
+            {chessComGames.length > 0 ? (
+              <PersonalReportView
+                games={chessComGames}
+                player={chessComPlayer}
+                username={chessComUsername}
+                isLoading={isReportLoading}
+                onRefreshGames={() => {
+                  if (chessComUsername) fetchGamesForReport(chessComUsername);
+                }}
+                onAnalyzeGame={(pgn) => {
+                  setReviewPgn(pgn);
+                  try {
+                    const temp = new Chess();
+                    temp.loadPgn(pgn);
+                    const history = temp.history({ verbose: true });
+                    const replay = new Chess();
+                    setMovesHistory(
+                      history.map((h) => {
+                        replay.move({ from: h.from, to: h.to, promotion: h.promotion });
+                        return {
+                          san: h.san,
+                          from: h.from,
+                          to: h.to,
+                          piece: h.piece as any,
+                          color: h.color as any,
+                          fen: replay.fen(),
+                          eval: 0,
+                        };
+                      })
+                    );
+                  } catch {}
+                  setActiveTab('review');
+                }}
+              />
+            ) : (
+              <div className="max-w-xl mx-auto px-4 py-12 space-y-6">
+                <div className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl text-center space-y-4 animate-in fade-in">
+                  <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-3xl mx-auto text-amber-400">
+                    📊
+                  </div>
+                  <div className="space-y-1">
+                    <h2 className="text-xl font-black text-slate-100 font-display">
+                      Personal Chess Report
+                    </h2>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                      Enter any public Chess.com username to import games and generate an objective Stockfish engine report on openings, common mistakes, strong areas, and a personalized improvement plan.
+                    </p>
+                  </div>
+
+                  {/* Username Input */}
+                  <div className="flex gap-2 max-w-md mx-auto pt-2">
+                    <input
+                      type="text"
+                      value={quickReportUserInput}
+                      onChange={(e) => setQuickReportUserInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') fetchGamesForReport(quickReportUserInput);
+                      }}
+                      placeholder="e.g. magnuscarlsen, hikaru"
+                      className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-amber-400 font-mono"
+                    />
+                    <button
+                      onClick={() => fetchGamesForReport(quickReportUserInput)}
+                      disabled={isReportLoading || !quickReportUserInput.trim()}
+                      className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                    >
+                      {isReportLoading ? (
+                        <span className="inline-block animate-spin">⏳</span>
+                      ) : (
+                        <FileText className="w-3.5 h-3.5" />
+                      )}
+                      <span>Generate</span>
+                    </button>
+                  </div>
+
+                  {/* Popular suggestions */}
+                  <div className="flex items-center justify-center gap-1.5 flex-wrap pt-2">
+                    <span className="text-[10px] text-slate-500 font-medium">Quick examples:</span>
+                    {['hikaru', 'magnuscarlsen', 'gothamchess', 'dannyrench'].map((u) => (
+                      <button
+                        key={u}
+                        onClick={() => {
+                          setQuickReportUserInput(u);
+                          fetchGamesForReport(u);
+                        }}
+                        className="text-[11px] px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono transition-colors cursor-pointer"
+                      >
+                        {u}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </React.Suspense>
+        ) : (
+          /* Dashboard & Match History */
+          <React.Suspense fallback={<div className="flex-1 flex items-center justify-center p-12 text-slate-400 text-xs font-mono"><span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mr-2" /> Loading Dashboard...</div>}>
+            <StatsView
+              stats={stats}
+              onStartBotGame={() => setActiveTab('bots')}
+              onSolvePuzzle={() => setActiveTab('puzzles')}
+              onOpenReport={(games, player, username) => {
+                setChessComGames(games);
+                setChessComPlayer(player);
+                setChessComUsername(username);
+                setActiveTab('report');
               }}
-              onAnalyzeGame={(pgn) => {
+              onReviewGame={(pgn) => {
                 setReviewPgn(pgn);
                 try {
                   const temp = new Chess();
@@ -1043,108 +1163,12 @@ export default function App() {
                 } catch {}
                 setActiveTab('review');
               }}
+              onResetStats={() => {
+                localStorage.removeItem('gm_chess_user_stats_v2');
+                setStats(loadUserStats());
+              }}
             />
-          ) : (
-            <div className="max-w-xl mx-auto px-4 py-12 space-y-6">
-              <div className="bg-slate-900 border border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl text-center space-y-4 animate-in fade-in">
-                <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-3xl mx-auto text-amber-400">
-                  📊
-                </div>
-                <div className="space-y-1">
-                  <h2 className="text-xl font-black text-slate-100 font-display">
-                    Personal Chess Report
-                  </h2>
-                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    Enter any public Chess.com username to import games and generate an objective Stockfish engine report on openings, common mistakes, strong areas, and a personalized improvement plan.
-                  </p>
-                </div>
-
-                {/* Username Input */}
-                <div className="flex gap-2 max-w-md mx-auto pt-2">
-                  <input
-                    type="text"
-                    value={quickReportUserInput}
-                    onChange={(e) => setQuickReportUserInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') fetchGamesForReport(quickReportUserInput);
-                    }}
-                    placeholder="e.g. magnuscarlsen, hikaru"
-                    className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-amber-400 font-mono"
-                  />
-                  <button
-                    onClick={() => fetchGamesForReport(quickReportUserInput)}
-                    disabled={isReportLoading || !quickReportUserInput.trim()}
-                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
-                  >
-                    {isReportLoading ? (
-                      <span className="inline-block animate-spin">⏳</span>
-                    ) : (
-                      <FileText className="w-3.5 h-3.5" />
-                    )}
-                    <span>Generate</span>
-                  </button>
-                </div>
-
-                {/* Popular suggestions */}
-                <div className="flex items-center justify-center gap-1.5 flex-wrap pt-2">
-                  <span className="text-[10px] text-slate-500 font-medium">Quick examples:</span>
-                  {['hikaru', 'magnuscarlsen', 'gothamchess', 'dannyrench'].map((u) => (
-                    <button
-                      key={u}
-                      onClick={() => {
-                        setQuickReportUserInput(u);
-                        fetchGamesForReport(u);
-                      }}
-                      className="text-[11px] px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono transition-colors cursor-pointer"
-                    >
-                      {u}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )
-        ) : (
-          /* Dashboard & Match History */
-          <StatsView
-            stats={stats}
-            onStartBotGame={() => setActiveTab('bots')}
-            onSolvePuzzle={() => setActiveTab('puzzles')}
-            onOpenReport={(games, player, username) => {
-              setChessComGames(games);
-              setChessComPlayer(player);
-              setChessComUsername(username);
-              setActiveTab('report');
-            }}
-            onReviewGame={(pgn) => {
-              setReviewPgn(pgn);
-              try {
-                const temp = new Chess();
-                temp.loadPgn(pgn);
-                const history = temp.history({ verbose: true });
-                const replay = new Chess();
-                setMovesHistory(
-                  history.map((h) => {
-                    replay.move({ from: h.from, to: h.to, promotion: h.promotion });
-                    return {
-                      san: h.san,
-                      from: h.from,
-                      to: h.to,
-                      piece: h.piece as any,
-                      color: h.color as any,
-                      fen: replay.fen(),
-                      eval: 0,
-                    };
-                  })
-                );
-              } catch {}
-              setActiveTab('review');
-            }}
-            onResetStats={() => {
-              localStorage.removeItem('gm_chess_user_stats_v2');
-              setStats(loadUserStats());
-            }}
-          />
+          </React.Suspense>
         )}
       </main>
 
@@ -1184,12 +1208,16 @@ export default function App() {
       )}
 
       {/* Settings Modal */}
-      <SettingsModal
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        preferences={preferences}
-        onUpdatePreferences={handleUpdatePreferences}
-      />
+      {showSettings && (
+        <React.Suspense fallback={null}>
+          <SettingsModal
+            isOpen={showSettings}
+            onClose={() => setShowSettings(false)}
+            preferences={preferences}
+            onUpdatePreferences={handleUpdatePreferences}
+          />
+        </React.Suspense>
+      )}
 
       {/* Game Over Modal */}
       <GameOverModal

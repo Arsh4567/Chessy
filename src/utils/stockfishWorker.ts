@@ -229,11 +229,6 @@ export class StockfishEngine {
   public sendCommand(cmd: string) {
     if (this.worker && !this.workerFailed) {
       try {
-        if (cmd.startsWith('position fen')) {
-          console.log('[Stockfish Engine] SENDING FEN:', cmd.slice(13).trim());
-        } else {
-          console.log('[Stockfish Engine] SENDING COMMAND:', cmd);
-        }
         this.worker.postMessage(cmd);
       } catch (err) {
         console.warn('Error sending command to Stockfish worker:', err);
@@ -250,7 +245,7 @@ export class StockfishEngine {
     this.isSearching = false;
     this.sendCommand('stop');
     // Synchronize engine state so all pending search messages are flushed
-    await this.waitReady(300);
+    await this.waitReady(200);
   }
 
   private handleWorkerMessage(messageData: string) {
@@ -261,13 +256,13 @@ export class StockfishEngine {
       if (!line) continue;
 
       // Broadcast raw line to subscribers
-      this.rawListeners.forEach((l) => {
+      for (let i = 0; i < this.rawListeners.length; i++) {
         try {
-          l(line);
+          this.rawListeners[i](line);
         } catch {
           // ignore subscriber errors
         }
-      });
+      }
 
       if (line === 'readyok' || line === 'uciok') {
         this.isReady = true;
@@ -279,17 +274,16 @@ export class StockfishEngine {
 
       // Parse engine evaluation info
       if (line.startsWith('info') && line.includes('score')) {
-        console.log('[Stockfish Engine] INFO RESPONSE RECEIVED:', line);
         const parsed = this.parseInfoLine(line);
         if (parsed) {
           this.latestEval = parsed;
-          this.listeners.forEach((cb) => {
+          for (let i = 0; i < this.listeners.length; i++) {
             try {
-              cb(parsed);
+              this.listeners[i](parsed);
             } catch {
               // ignore
             }
-          });
+          }
         }
       }
 
@@ -561,8 +555,22 @@ export class StockfishEngine {
   ): Promise<StockfishEvaluation> {
     const cleanFen = fen.trim();
 
+    // Check FEN cache first if depth satisfies the requirement
+    const cached = this.fenEvalCache.get(cleanFen);
+    if (cached && cached.depth >= depth && cached.bestMove) {
+      if (onProgress) onProgress(cached);
+      return cached;
+    }
+
     const run = async (): Promise<StockfishEvaluation> => {
       try {
+        // Double check cache before acquiring worker
+        const cachedInner = this.fenEvalCache.get(cleanFen);
+        if (cachedInner && cachedInner.depth >= depth && cachedInner.bestMove) {
+          if (onProgress) onProgress(cachedInner);
+          return cachedInner;
+        }
+
         await this.ensureReady();
         if (this.workerFailed || !this.worker) {
           const fallback = this.computeFallbackEval(cleanFen);
@@ -610,12 +618,21 @@ export class StockfishEngine {
               this.isSearching = false;
               this.currentEvalResolve = null;
               this.rawListeners = this.rawListeners.filter((l) => l !== onLine);
+
+              // Cache evaluated position
+              if (result.depth >= 6) {
+                if (this.fenEvalCache.size >= this.MAX_FEN_CACHE) {
+                  const firstKey = this.fenEvalCache.keys().next().value;
+                  if (firstKey) this.fenEvalCache.delete(firstKey);
+                }
+                this.fenEvalCache.set(cleanFen, result);
+              }
+
               resolve(result);
             }
           };
 
           const timer = setTimeout(() => {
-            console.warn('[Stockfish Engine] Search timeout reached for FEN, stopping search and resolving with accumulated eval:', cleanFen);
             this.sendCommand('stop');
             finish(accumulatedEval.depth > 0 ? accumulatedEval : initialFallback);
           }, maxWait);

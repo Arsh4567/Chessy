@@ -92,14 +92,15 @@ export async function fetchLichessOpeningStats(
 
   // 3. Build small on-demand query for Masters Opening Explorer using exact FEN
   const encodedFen = encodeURIComponent(cleanFen);
-  const endpoint = `https://explorer.lichess.ovh/masters?fen=${encodedFen}&moves=12&topGames=0`;
+  // Prefer internal backend proxy endpoint which securely holds LICHESS_TOKEN
+  const endpoint = `/api/lichess/masters?fen=${encodedFen}&moves=12&topGames=0`;
 
-  console.log('[Lichess Masters API] Request initiating:', {
+  console.log('[Lichess Masters API] Request initiating via proxy:', {
     fen: cleanFen,
     endpoint,
   });
 
-  // Optional authentication token if configured by user or environment
+  // Optional client-side authentication token fallback
   const token = typeof window !== 'undefined'
     ? (localStorage.getItem('lichess_token') || (window as any).LICHESS_TOKEN || (import.meta as any).env?.VITE_LICHESS_TOKEN)
     : null;

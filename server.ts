@@ -20,6 +20,47 @@ const ai = new GoogleGenAI({
   },
 });
 
+// API endpoint to proxy Lichess Masters Opening Explorer requests securely
+app.get('/api/lichess/masters', async (req, res) => {
+  try {
+    const fen = req.query.fen as string;
+    if (!fen) {
+      return res.status(400).json({ error: 'fen parameter is required' });
+    }
+
+    const moves = (req.query.moves as string) || '12';
+    const topGames = (req.query.topGames as string) || '0';
+    const encodedFen = encodeURIComponent(fen.trim());
+    const lichessUrl = `https://explorer.lichess.ovh/masters?fen=${encodedFen}&moves=${moves}&topGames=${topGames}`;
+
+    const token = process.env.LICHESS_TOKEN || process.env.LICHESS_API_KEY || '';
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'User-Agent': 'ChessMasterApp/1.0',
+    };
+    if (token && token.trim()) {
+      headers['Authorization'] = `Bearer ${token.trim()}`;
+    }
+
+    const upstreamResponse = await fetch(lichessUrl, {
+      headers,
+    });
+
+    if (!upstreamResponse.ok) {
+      console.warn(`[Lichess Proxy] Upstream responded with HTTP ${upstreamResponse.status}`);
+      return res.status(upstreamResponse.status).json({
+        error: `Lichess returned HTTP ${upstreamResponse.status}`,
+      });
+    }
+
+    const data = await upstreamResponse.json();
+    return res.json(data);
+  } catch (error: any) {
+    console.error('[Lichess Proxy] Error proxying to Lichess:', error);
+    return res.status(502).json({ error: 'Failed to connect to Lichess API' });
+  }
+});
+
 // API endpoint to generate explanation for why a master move is popular
 app.post('/api/explain-move', async (req, res) => {
   try {
