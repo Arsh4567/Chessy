@@ -91,6 +91,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 <Zap className="w-3.5 h-3.5 text-amber-400" />
                 <span>Solve Puzzles ({stats.puzzleRating})</span>
               </button>
+
+              <button
+                onClick={() => onNavigate('friends')}
+                className="px-4 py-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-slate-200 font-semibold text-xs sm:text-sm transition-all duration-200 cursor-pointer flex items-center gap-1.5"
+              >
+                <Users className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Play Friend Online</span>
+              </button>
             </div>
 
             {/* Performance Metric Counters */}

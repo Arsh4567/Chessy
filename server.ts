@@ -1,7 +1,10 @@
+import http from 'http';
+import { WebSocketServer } from 'ws';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { multiplayerServer } from './server/multiplayerServer';
 
 dotenv.config();
 
@@ -110,8 +113,19 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
-  app.listen(port, '0.0.0.0', () => {
-    console.log(`Server listening on http://0.0.0.0:${port}`);
+  const server = http.createServer(app);
+
+  const wss = new WebSocketServer({
+    server,
+    path: '/ws/multiplayer',
+  });
+
+  wss.on('connection', (ws) => {
+    multiplayerServer.handleConnection(ws);
+  });
+
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`Server listening on http://0.0.0.0:${port} (WebSocket ready on /ws/multiplayer)`);
   });
 }
 

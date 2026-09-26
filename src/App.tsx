@@ -122,6 +122,7 @@ export default function App() {
   const [chessComPlayer, setChessComPlayer] = useState<ChessComPlayer | null>(null);
   const [chessComUsername, setChessComUsername] = useState<string>('');
   const [isReportLoading, setIsReportLoading] = useState<boolean>(false);
+  const [multiplayerRoomCode, setMultiplayerRoomCode] = useState<string>('');
 
   const fetchGamesForReport = async (user: string) => {
     if (!user.trim()) return;
@@ -154,6 +155,12 @@ export default function App() {
     if (typeof window === 'undefined') return;
     try {
       const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room') || urlParams.get('multiplayer');
+      if (roomParam) {
+        setMultiplayerRoomCode(roomParam.trim().toUpperCase());
+        setActiveTab('friends');
+        return;
+      }
       const fenParam = urlParams.get('fen') || urlParams.get('position');
       if (fenParam) {
         handleLoadPosition(decodeURIComponent(fenParam));
@@ -203,6 +210,8 @@ export default function App() {
         onSelectTab={setActiveTab}
         onOpenSettings={() => setShowSettings(true)}
         puzzleRating={stats.puzzleRating}
+        multiplayerRating={stats.multiplayerRating}
+        multiplayerGamesPlayed={stats.multiplayerGamesPlayed}
       />
 
       {/* Main App View */}
@@ -379,6 +388,7 @@ export default function App() {
                 setActiveTab('play');
               }}
               onSolvePuzzle={() => setActiveTab('puzzles')}
+              onPlayMultiplayer={() => setActiveTab('friends')}
             />
           </React.Suspense>
         ) : activeTab === 'profile' ? (
@@ -416,12 +426,16 @@ export default function App() {
               }}
               onNavigateToPlay={() => setActiveTab('play')}
               onNavigateToPuzzles={() => setActiveTab('puzzles')}
+              onNavigateToMultiplayer={() => setActiveTab('friends')}
             />
           </React.Suspense>
         ) : activeTab === 'friends' ? (
-          /* Friends Pass & Play */
-          <React.Suspense fallback={<div className="flex-1 flex items-center justify-center p-12 text-slate-400 text-xs font-mono"><span className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin mr-2" /> Loading Pass & Play...</div>}>
+          /* Online Multiplayer & Friends */
+          <React.Suspense fallback={<div className="flex-1 flex items-center justify-center p-12 text-slate-400 text-xs font-mono"><span className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin mr-2" /> Loading Multiplayer...</div>}>
             <FriendsView
+              stats={stats}
+              onStatsUpdate={(newStats) => setStats(newStats)}
+              initialRoomCode={multiplayerRoomCode}
               onStartLocalGame={(tc, side, fen) => {
                 startNewGame(
                   'pvp-local',
@@ -431,6 +445,30 @@ export default function App() {
                   fen
                 );
                 setActiveTab('play');
+              }}
+              onReviewGame={(pgn) => {
+                setReviewPgn(pgn);
+                try {
+                  const temp = new Chess();
+                  temp.loadPgn(pgn);
+                  const history = temp.history({ verbose: true });
+                  const replay = new Chess();
+                  setMovesHistory(
+                    history.map((h) => {
+                      replay.move({ from: h.from, to: h.to, promotion: h.promotion });
+                      return {
+                        san: h.san,
+                        from: h.from,
+                        to: h.to,
+                        piece: h.piece as any,
+                        color: h.color as any,
+                        fen: replay.fen(),
+                        eval: 0,
+                      };
+                    })
+                  );
+                } catch {}
+                setActiveTab('analyze');
               }}
             />
           </React.Suspense>

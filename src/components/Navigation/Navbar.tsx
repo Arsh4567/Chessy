@@ -31,6 +31,8 @@ interface NavbarProps {
   onSelectTab: (tab: NavTab) => void;
   onOpenSettings: () => void;
   puzzleRating?: number;
+  multiplayerRating?: number;
+  multiplayerGamesPlayed?: number;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -38,6 +40,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectTab,
   onOpenSettings,
   puzzleRating = 1500,
+  multiplayerRating = 800,
+  multiplayerGamesPlayed = 0,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -101,21 +105,22 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right Secondary Actions & Profile */}
         <div className="flex items-center gap-2">
-          {/* Quick Friends Match Trigger */}
+          {/* Quick Multiplayer Match Trigger */}
           <button
             onClick={() => handleTabClick('friends')}
-            className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer hidden md:flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer hidden md:flex items-center gap-1.5 ${
               currentTab === 'friends'
-                ? 'bg-sky-500 text-slate-950'
+                ? 'bg-sky-500 text-slate-950 shadow-md font-black'
                 : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700'
             }`}
-            title="Local Pass & Play Match"
+            title="Live Online Multiplayer & Shareable Match Links"
           >
             <Users className="w-3.5 h-3.5 text-sky-400" />
-            <span>Friends</span>
+            <span>Multiplayer</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           </button>
 
-          {/* User Profile Pill */}
+          {/* User Profile & Rating Pill */}
           <button
             onClick={() => handleTabClick('profile')}
             className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -123,10 +128,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                 ? 'bg-sky-500 text-slate-950 shadow-md'
                 : 'bg-slate-900 border border-slate-800 text-slate-200 hover:border-slate-700'
             }`}
-            title="View Player Profile & Match History"
+            title={`Multiplayer Rating: ${multiplayerRating} Elo ${multiplayerGamesPlayed < 7 ? `(Placement ${multiplayerGamesPlayed}/7)` : ''} • Tactics: ${puzzleRating}`}
           >
             <User className="w-3.5 h-3.5 text-sky-400" />
-            <span>{puzzleRating}</span>
+            <span className="text-amber-300">{multiplayerRating}</span>
+            <span className="text-[10px] text-slate-400 font-normal">Elo</span>
+            {multiplayerGamesPlayed < 7 && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Placement Phase (Drastic ±100)" />
+            )}
           </button>
 
           {/* Settings Trigger */}
@@ -181,7 +190,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               }`}
             >
               <Users className="w-3.5 h-3.5 text-sky-400" />
-              <span>Pass & Play</span>
+              <span>Multiplayer</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             </button>
             <button
               onClick={() => handleTabClick('profile')}

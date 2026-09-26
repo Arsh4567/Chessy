@@ -174,6 +174,16 @@ class SoundEngine {
     } catch {}
   }
 
+  public playMatchStart() {
+    if (this.isMuted) return;
+    this.playNotify();
+  }
+
+  public playGameOver() {
+    if (this.isMuted) return;
+    this.playCheckmate();
+  }
+
   public playNotify() {
     if (this.isMuted) return;
     this.init();
