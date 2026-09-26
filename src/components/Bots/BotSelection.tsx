@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { BotProfile, TimeControl } from '../../types/chess';
 import { TIME_CONTROLS } from '../../utils/mockData';
 import { tuneStockfishForElo } from '../../utils/engine';
-import { Play, Cpu, Sparkles } from 'lucide-react';
+import { Play, Cpu, Bot, Zap, Swords } from 'lucide-react';
 
 interface BotSelectionProps {
   onStartBotGame: (bot: BotProfile, timeControl: TimeControl, playerColor: 'w' | 'b' | 'random') => void;
@@ -34,7 +34,7 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
       name: `Stockfish ${selectedElo}`,
       elo: selectedElo,
       title: selectedElo >= 2400 ? 'GM' : selectedElo >= 2000 ? 'NM' : undefined,
-      avatarBg: 'bg-emerald-950/70 border-emerald-500/30 text-emerald-400',
+      avatarBg: 'bg-sky-950/70 border-sky-500/30 text-sky-400',
       avatarIcon: '🤖',
       description: tuning.description,
       tagline: `Tuned to ${selectedElo} Elo`,
@@ -48,12 +48,34 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6 animate-in fade-in duration-200">
-      {/* Header */}
-      <div className="text-center space-y-1">
-        <h1 className="text-2xl sm:text-3xl font-black text-slate-100 font-display tracking-tight">
-          Stockfish
-        </h1>
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6 animate-in fade-in duration-200">
+      {/* Header Banner */}
+      <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="space-y-1.5">
+          <div className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-sky-400">
+            <Swords className="w-4 h-4" />
+            <span>AI Bot Arena</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black font-display text-white">
+            Play Stockfish Engine
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-400 max-w-xl">
+            Choose your target Elo rating or pick a preset. Stockfish dynamically adjusts its search depth, calculation speed, and blunder probabilities.
+          </p>
+        </div>
+
+        {/* Selected Elo Badge */}
+        <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 shrink-0 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-sky-500/10 border border-sky-500/25 flex items-center justify-center text-sky-400 text-xl font-bold">
+            🤖
+          </div>
+          <div>
+            <div className="text-xs text-slate-400 font-medium">Selected Opponent</div>
+            <div className="text-xl font-bold font-mono text-white mt-0.5">
+              {selectedElo} <span className="text-xs text-sky-400 font-normal">Elo</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Main Elo Tuning Card */}
@@ -62,31 +84,38 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
           <div className="space-y-1">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Rating
+              Bot Strength
             </span>
             <div className="flex items-center gap-3">
-              <span className="text-3xl sm:text-4xl font-black font-mono text-emerald-400">
+              <span className="text-3xl sm:text-4xl font-black font-mono text-sky-400 tabular-nums">
                 {selectedElo} <span className="text-base text-slate-400 font-sans font-medium">Elo</span>
               </span>
               {selectedElo >= 2400 ? (
-                <span className="text-xs bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-0.5 rounded font-mono font-bold">
-                  GM
+                <span className="text-xs bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2.5 py-0.5 rounded-lg font-mono font-bold">
+                  Grandmaster
                 </span>
               ) : selectedElo >= 2000 ? (
-                <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-mono font-bold">
-                  Master
+                <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-lg font-mono font-bold">
+                  National Master
                 </span>
-              ) : null}
+              ) : (
+                <span className="text-xs bg-sky-500/20 text-sky-400 border border-sky-500/30 px-2.5 py-0.5 rounded-lg font-mono font-bold">
+                  Club Player
+                </span>
+              )}
             </div>
           </div>
+          <p className="text-xs text-slate-400 max-w-sm">
+            {tuning.description}
+          </p>
         </div>
 
         {/* Elo Presets */}
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            Presets
+            Rating Presets
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
             {ELO_PRESETS.map((preset) => {
               const isSelected = selectedElo === preset.elo;
               return (
@@ -95,14 +124,14 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
                   onClick={() => setSelectedElo(preset.elo)}
                   className={`p-3 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
                     isSelected
-                      ? 'border-emerald-400 bg-emerald-500/15 shadow-md text-slate-100 scale-102'
+                      ? 'border-sky-400 bg-sky-500/15 shadow-md text-slate-100 scale-102 font-bold'
                       : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:border-slate-700 hover:bg-slate-800/60'
                   }`}
                 >
                   <span className="text-xs font-semibold text-slate-400">
                     {preset.label}
                   </span>
-                  <span className="text-sm font-black font-mono text-emerald-400">
+                  <span className="text-sm font-black font-mono text-sky-400 tabular-nums">
                     {preset.elo}
                   </span>
                 </button>
@@ -112,10 +141,10 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
         </div>
 
         {/* Fine-Tuning Slider */}
-        <div className="space-y-2 pt-2">
+        <div className="space-y-2.5 pt-2">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-bold text-slate-400 uppercase tracking-wider">Elo</span>
-            <span className="font-mono text-emerald-400 font-bold">{selectedElo}</span>
+            <span className="font-bold text-slate-400 uppercase tracking-wider">Fine-Tune Rating</span>
+            <span className="font-mono text-sky-400 font-bold tabular-nums">{selectedElo} Elo</span>
           </div>
           <input
             type="range"
@@ -124,7 +153,7 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
             step="25"
             value={selectedElo}
             onChange={(e) => setSelectedElo(parseInt(e.target.value, 10))}
-            className="w-full accent-emerald-400 cursor-pointer h-2.5 bg-slate-800 rounded-lg"
+            className="w-full accent-sky-400 cursor-pointer h-2.5 bg-slate-800 rounded-lg"
           />
           <div className="flex justify-between text-[10px] text-slate-500 font-mono">
             <span>400</span>
@@ -137,12 +166,12 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
       </div>
 
       {/* Match Options: Color & Time */}
-      <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-5 shadow-xl">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-5">
           {/* Color Choice */}
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider mr-2">Color</span>
-            <div className="flex gap-1.5 flex-1">
+            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider mr-2">Play As</span>
+            <div className="flex gap-2 flex-1">
               {(
                 [
                   { id: 'w', label: 'White', icon: '♔' },
@@ -153,9 +182,9 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
                 <button
                   key={c.id}
                   onClick={() => setPlayerColor(c.id)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                     playerColor === c.id
-                      ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
+                      ? 'bg-sky-500 text-slate-950 shadow-md font-black'
                       : 'bg-slate-800 text-slate-300 hover:text-white'
                   }`}
                 >
@@ -168,15 +197,15 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
 
           {/* Time Choice */}
           <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider mr-2">Time</span>
+            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider mr-2">Time Control</span>
             <div className="flex gap-1.5">
               {TIME_CONTROLS.map((tc) => (
                 <button
                   key={tc.id}
                   onClick={() => setSelectedTimeControl(tc)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  className={`px-3 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer whitespace-nowrap ${
                     selectedTimeControl.id === tc.id
-                      ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
+                      ? 'bg-sky-500 text-slate-950 shadow-md font-black'
                       : 'bg-slate-800 text-slate-300 hover:text-white'
                   }`}
                 >
@@ -191,10 +220,10 @@ export const BotSelection: React.FC<BotSelectionProps> = ({ onStartBotGame }) =>
         <div className="pt-2 flex justify-end">
           <button
             onClick={handleStart}
-            className="w-full sm:w-auto px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-black text-sm rounded-xl transition-all shadow-lg shadow-sky-500/25 flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
           >
             <Play className="w-4 h-4 fill-current" />
-            <span>Play</span>
+            <span>Start Match</span>
           </button>
         </div>
       </div>

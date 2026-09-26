@@ -20,18 +20,19 @@ const ai = new GoogleGenAI({
   },
 });
 
-// API endpoint to proxy Lichess Masters Opening Explorer requests securely
-app.get('/api/lichess/masters', async (req, res) => {
+// API endpoint to proxy Lichess Masters & Community Opening Explorer requests securely
+app.get('/api/lichess/:type', async (req, res) => {
   try {
     const fen = req.query.fen as string;
     if (!fen) {
       return res.status(400).json({ error: 'fen parameter is required' });
     }
 
-    const moves = (req.query.moves as string) || '12';
+    const type = req.params.type === 'lichess' ? 'lichess' : 'masters';
+    const moves = (req.query.moves as string) || '15';
     const topGames = (req.query.topGames as string) || '0';
     const encodedFen = encodeURIComponent(fen.trim());
-    const lichessUrl = `https://explorer.lichess.ovh/masters?fen=${encodedFen}&moves=${moves}&topGames=${topGames}`;
+    const lichessUrl = `https://explorer.lichess.ovh/${type}?fen=${encodedFen}&moves=${moves}&topGames=${topGames}`;
 
     const token = process.env.LICHESS_TOKEN || process.env.LICHESS_API_KEY || '';
     const headers: Record<string, string> = {
@@ -47,7 +48,7 @@ app.get('/api/lichess/masters', async (req, res) => {
     });
 
     if (!upstreamResponse.ok) {
-      console.warn(`[Lichess Proxy] Upstream responded with HTTP ${upstreamResponse.status}`);
+      console.warn(`[Lichess Proxy] Upstream (${type}) responded with HTTP ${upstreamResponse.status}`);
       return res.status(upstreamResponse.status).json({
         error: `Lichess returned HTTP ${upstreamResponse.status}`,
       });

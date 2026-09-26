@@ -157,8 +157,8 @@ export function analyzeGameProgressively(
 ): ProgressiveAnalysisController {
   let isAborted = false;
   const maxBudgetMs = options?.maxBudgetMs || 45000;
-  const stockfishDepth = options?.stockfishDepth || 16;
-  const movetimeMs = options?.movetimeMs || 150;
+  const stockfishDepth = options?.stockfishDepth || 14;
+  const movetimeMs = options?.movetimeMs || 100;
   const startTime = performance.now();
 
   // 1. Check in-memory LRU cache first (only if it has fully evaluated moves)
@@ -328,8 +328,10 @@ export function analyzeGameProgressively(
           console.log('STOCKFISH REQUEST SENT:', fenAfter);
         }
 
-        // Step B: Run Stockfish evaluation on position AFTER the move (depth 16-24)
-        const currentEval: StockfishEvaluation = await stockfish.evaluatePosition(fenAfter, stockfishDepth, movetimeMs);
+        // Step B: Run Stockfish evaluation on position AFTER the move (fast opening moves, deep middlegame)
+        const moveDepth = moveNumber <= 4 ? Math.min(stockfishDepth, 12) : stockfishDepth;
+        const moveTime = moveNumber <= 4 ? Math.min(movetimeMs, 75) : movetimeMs;
+        const currentEval: StockfishEvaluation = await stockfish.evaluatePosition(fenAfter, moveDepth, moveTime);
         const currentBestMoveSan = getBestMoveSan(fenAfter, currentEval.bestMove);
 
         // Before score (from White's perspective) and After score (from White's perspective)

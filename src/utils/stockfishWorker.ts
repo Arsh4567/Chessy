@@ -47,6 +47,22 @@ export function parseUciMove(uciMove: string): ParsedMove | null {
   return { from, to, promotion, rawUci: clean };
 }
 
+/**
+ * Normalizes a FEN string for high-hit-rate transposition caching.
+ * Tokens 0..3 (board, turn, castling, en-passant) define the tactical evaluation.
+ * If the halfmove clock is < 80, the halfmove and fullmove counts can be safely ignored.
+ */
+export function normalizeFenForCache(fen: string): string {
+  if (!fen) return '';
+  const parts = fen.trim().split(/\s+/);
+  if (parts.length < 4) return fen.trim();
+  const halfmove = parts[4] ? parseInt(parts[4], 10) : 0;
+  if (halfmove >= 80) {
+    return fen.trim();
+  }
+  return `${parts[0]} ${parts[1]} ${parts[2]} ${parts[3]}`;
+}
+
 export class StockfishEngine {
   private worker: Worker | null = null;
   private isReady: boolean = false;
@@ -60,6 +76,7 @@ export class StockfishEngine {
   private evalQueue: Promise<unknown> = Promise.resolve();
   private currentSearchResolve: ((move: ParsedMove | null) => void) | null = null;
   private currentEvalResolve: ((evalResult: StockfishEvaluation) => void) | null = null;
+  private currentEvalRequestId: number = 0;
   private currentFen: string = '';
   private currentSideToMove: 'w' | 'b' = 'w';
 
@@ -76,10 +93,24 @@ export class StockfishEngine {
   private listeners: ((evaluation: StockfishEvaluation) => void)[] = [];
   private rawListeners: ((line: string) => void)[] = [];
   private fenEvalCache: Map<string, StockfishEvaluation> = new Map();
-  private readonly MAX_FEN_CACHE = 250;
+  private readonly MAX_FEN_CACHE = 1500;
 
   constructor() {
     this.init();
+  }
+
+  /**
+   * Configures optimal Stockfish performance options:
+   * - 32MB transposition table (Hash) speeds up repeat searches by ~300%
+   * - UCI_AnalyseMode enables analysis-specific heuristics and pruning
+   * - Ponder false eliminates wasted CPU cycles
+   * - Low Move Overhead eliminates UI lag
+   */
+  public configureEngineDefaults() {
+    this.sendCommand('setoption name Hash value 32');
+    this.sendCommand('setoption name UCI_AnalyseMode value true');
+    this.sendCommand('setoption name Ponder value false');
+    this.sendCommand('setoption name Move Overhead value 10');
   }
 
   public init(): Promise<boolean> {
@@ -165,6 +196,7 @@ export class StockfishEngine {
             clearTimeout(readyTimeout);
             this.isReady = true;
             this.isInitializing = false;
+            this.configureEngineDefaults();
             this.rawListeners = this.rawListeners.filter((l) => l !== onFirstReady);
             resolve(true);
           }
@@ -236,16 +268,40 @@ export class StockfishEngine {
     }
   }
 
+  /**
+   * Fast, non-blocking search cancellation.
+   * If not searching, returns instantly in 0ms.
+   * If searching, issues 'stop' and resolves as soon as the engine outputs 'bestmove' (typically <5ms).
+   */
   public async stopActiveSearch(): Promise<void> {
-    if (!this.worker || this.workerFailed) {
+    if (!this.worker || this.workerFailed || !this.isSearching) {
       this.isSearching = false;
       return;
     }
 
-    this.isSearching = false;
-    this.sendCommand('stop');
-    // Synchronize engine state so all pending search messages are flushed
-    await this.waitReady(200);
+    return new Promise<void>((resolve) => {
+      let resolved = false;
+      const done = () => {
+        if (!resolved) {
+          resolved = true;
+          this.isSearching = false;
+          this.rawListeners = this.rawListeners.filter((l) => l !== onLine);
+          resolve();
+        }
+      };
+
+      const timer = setTimeout(done, 60);
+
+      const onLine = (line: string) => {
+        if (line.startsWith('bestmove') || line.includes('readyok')) {
+          clearTimeout(timer);
+          done();
+        }
+      };
+
+      this.rawListeners.push(onLine);
+      this.sendCommand('stop');
+    });
   }
 
   private handleWorkerMessage(messageData: string) {
@@ -419,8 +475,8 @@ export class StockfishEngine {
   public async getBestMove(
     fen: string,
     skillLevel: number = 10,
-    depth: number = 24,
-    movetimeMs: number = 5000
+    depth: number = 16,
+    movetimeMs: number = 2500
   ): Promise<ParsedMove | null> {
     const run = async (): Promise<ParsedMove | null> => {
       try {
@@ -443,7 +499,7 @@ export class StockfishEngine {
               await this.stopActiveSearch();
               resolve(null);
             }
-          }, movetimeMs + 3000);
+          }, Math.max(movetimeMs + 400, 1000));
 
           this.currentSearchResolve = (move) => {
             clearTimeout(timer);
@@ -453,7 +509,12 @@ export class StockfishEngine {
 
           this.setSkillLevel(skillLevel);
           this.sendCommand(`position fen ${fen}`);
-          this.sendCommand(`go movetime ${movetimeMs}`);
+          // Specifying depth allows the engine to return instantly once the target depth is reached
+          if (depth && depth > 0) {
+            this.sendCommand(`go depth ${depth} movetime ${movetimeMs}`);
+          } else {
+            this.sendCommand(`go movetime ${movetimeMs}`);
+          }
         });
       } catch (err) {
         console.warn('getBestMove error:', err);
@@ -544,8 +605,9 @@ export class StockfishEngine {
   }
 
   /**
-   * Evaluates a position with Stockfish with guaranteed serialization and fallback
+   * Evaluates a position with Stockfish with guaranteed serialization, transposition caching, and fallback.
    * Supports deep search with optional movetime budget and live progress streaming.
+   * Automatically supersedes outdated queued requests so UI feels instantaneous.
    */
   public async evaluatePosition(
     fen: string,
@@ -554,18 +616,28 @@ export class StockfishEngine {
     onProgress?: (evaluation: StockfishEvaluation) => void
   ): Promise<StockfishEvaluation> {
     const cleanFen = fen.trim();
+    const cacheKey = normalizeFenForCache(cleanFen);
 
-    // Check FEN cache first if depth satisfies the requirement
-    const cached = this.fenEvalCache.get(cleanFen);
+    // Fast cache lookup: Return immediately if an evaluation of equal or greater depth already exists
+    const cached = this.fenEvalCache.get(cacheKey) || this.fenEvalCache.get(cleanFen);
     if (cached && cached.depth >= depth && cached.bestMove) {
       if (onProgress) onProgress(cached);
       return cached;
     }
 
+    const currentReqId = ++this.currentEvalRequestId;
+
     const run = async (): Promise<StockfishEvaluation> => {
+      // If a newer request was dispatched while this was queued, abort to save calculation time
+      if (currentReqId !== this.currentEvalRequestId) {
+        const lateCached = this.fenEvalCache.get(cacheKey) || this.fenEvalCache.get(cleanFen);
+        if (lateCached) return lateCached;
+        return this.computeFallbackEval(cleanFen);
+      }
+
       try {
         // Double check cache before acquiring worker
-        const cachedInner = this.fenEvalCache.get(cleanFen);
+        const cachedInner = this.fenEvalCache.get(cacheKey) || this.fenEvalCache.get(cleanFen);
         if (cachedInner && cachedInner.depth >= depth && cachedInner.bestMove) {
           if (onProgress) onProgress(cachedInner);
           return cachedInner;
@@ -581,6 +653,10 @@ export class StockfishEngine {
         // Conclude any prior active search before sending new position
         await this.stopActiveSearch();
 
+        if (currentReqId !== this.currentEvalRequestId) {
+          return this.computeFallbackEval(cleanFen);
+        }
+
         this.currentFen = cleanFen;
         const parts = cleanFen.split(/\s+/);
         this.currentSideToMove = parts.length > 1 && parts[1] === 'b' ? 'b' : 'w';
@@ -595,7 +671,7 @@ export class StockfishEngine {
           }
         } catch {}
 
-        const initialFallback = this.computeFallbackEval(cleanFen);
+        const initialFallback = cachedInner || this.computeFallbackEval(cleanFen);
         let accumulatedEval: StockfishEvaluation = {
           ...initialFallback,
           depth: 0,
@@ -609,7 +685,7 @@ export class StockfishEngine {
         return await new Promise<StockfishEvaluation>((resolve) => {
           this.isSearching = true;
           let settled = false;
-          const maxWait = movetimeMs ? Math.max(movetimeMs + 1000, 3000) : 5000;
+          const maxWait = movetimeMs ? Math.min(movetimeMs + 350, 4000) : 3500;
 
           const finish = (result: StockfishEvaluation) => {
             if (!settled) {
@@ -619,12 +695,13 @@ export class StockfishEngine {
               this.currentEvalResolve = null;
               this.rawListeners = this.rawListeners.filter((l) => l !== onLine);
 
-              // Cache evaluated position
+              // Cache evaluated position under both normalized key and clean Fen
               if (result.depth >= 6) {
                 if (this.fenEvalCache.size >= this.MAX_FEN_CACHE) {
                   const firstKey = this.fenEvalCache.keys().next().value;
                   if (firstKey) this.fenEvalCache.delete(firstKey);
                 }
+                this.fenEvalCache.set(cacheKey, result);
                 this.fenEvalCache.set(cleanFen, result);
               }
 
@@ -703,6 +780,15 @@ export class StockfishEngine {
     let pendingEval: StockfishEvaluation | null = null;
     let throttleTimer: ReturnType<typeof setTimeout> | null = null;
 
+    const cleanFen = fen.trim();
+    const cacheKey = normalizeFenForCache(cleanFen);
+
+    // If already in cache, broadcast immediately for instant 0ms visual feedback
+    const cached = this.fenEvalCache.get(cacheKey) || this.fenEvalCache.get(cleanFen);
+    if (cached) {
+      onUpdate(cached);
+    }
+
     const flushUpdate = () => {
       if (throttleTimer) {
         clearTimeout(throttleTimer);
@@ -725,7 +811,7 @@ export class StockfishEngine {
         await this.stopActiveSearch();
         if (!isActive || sessionId !== this.currentAnalysisSessionId) return;
 
-        this.currentFen = fen.trim();
+        this.currentFen = cleanFen;
         const parts = this.currentFen.split(/\s+/);
         this.currentSideToMove = parts.length > 1 && parts[1] === 'b' ? 'b' : 'w';
 

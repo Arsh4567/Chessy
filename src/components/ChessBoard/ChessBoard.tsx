@@ -4,6 +4,7 @@ import { PieceColor, PieceType, MoveClassification } from '../../types/chess';
 import { PieceIcon } from './PieceIcon';
 import { MOVE_QUALITY_SIGNS } from '../../utils/moveClassification';
 import { MoveMark } from './MoveMark';
+import { PromotionModal } from './PromotionModal';
 
 interface ChessBoardProps {
   chess: Chess;
@@ -311,7 +312,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
   }, [draggedSquare, disabled, legalTargetsMap, chess, autoQueen, onMove]);
 
   return (
-    <div className={`relative w-full max-w-[540px] aspect-square select-none board-theme-${boardTheme} rounded-2xl shadow-2xl p-2 bg-slate-900 border border-slate-800 transition-all duration-300`}>
+    <div className={`relative w-full max-w-[440px] sm:max-w-[460px] lg:max-w-[480px] aspect-square select-none board-theme-${boardTheme} rounded-2xl shadow-xl p-1.5 sm:p-2 bg-slate-900 border border-slate-800 transition-all duration-300`}>
       <div className="relative w-full h-full grid grid-cols-8 grid-rows-8 rounded-xl overflow-hidden border border-black/40 shadow-inner will-change-transform">
         {displayRanks.map((rank, rIdx) => {
           const rankNum = parseInt(rank, 10);
@@ -439,28 +440,11 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
       </div>
 
       {/* Pawn Promotion Modal */}
-      {pendingPromotion && (
-        <div className="absolute inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 rounded-2xl animate-in fade-in zoom-in-95 duration-150">
-          <div className="bg-slate-900 border border-slate-700 p-4 rounded-2xl shadow-2xl flex flex-col items-center gap-3">
-            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Promote Pawn</span>
-            <div className="flex gap-2">
-              {(['q', 'r', 'b', 'n'] as const).map((pType) => (
-                <button
-                  key={pType}
-                  onClick={() => handlePromotionSelect(pType)}
-                  className="w-14 h-14 sm:w-16 sm:h-16 bg-slate-800 hover:bg-amber-500/20 border border-slate-700 hover:border-amber-500 rounded-xl flex items-center justify-center transition-all cursor-pointer p-2"
-                >
-                  <PieceIcon
-                    type={pType}
-                    color={turn === 'w' ? 'w' : 'b'}
-                    className="w-full h-full drop-shadow-lg"
-                  />
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <PromotionModal
+        isOpen={Boolean(pendingPromotion)}
+        turn={turn}
+        onSelectPromotion={handlePromotionSelect}
+      />
     </div>
   );
 });

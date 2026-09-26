@@ -243,7 +243,8 @@ export async function getBestMoveAsync(
 ): Promise<{ from: string; to: string; promotion?: string }> {
   try {
     const tuning = getStockfishTuningForBot(bot);
-    const moveTime = 350;
+    // Dynamically scale max move time: beginner bots compute in ~80-120ms, masters in 280-350ms
+    const moveTime = Math.min(350, Math.max(100, tuning.depth * 22));
 
     const sfMove = await stockfish.getBestMove(chess.fen(), tuning.skillLevel, tuning.depth, moveTime);
     if (sfMove && sfMove.from && sfMove.to) {

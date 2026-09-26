@@ -14,7 +14,7 @@
 
 import { getOpeningFromFen } from './openings';
 
-export type ExplorerDatabase = 'masters';
+export type ExplorerDatabase = 'masters' | 'lichess';
 
 export interface LichessExplorerMove {
   uci: string;
@@ -27,11 +27,16 @@ export interface LichessExplorerMove {
   drawPct: number;
   blackWinPct: number;
   playPct: number;
+  averageRating?: number;
+  opening?: {
+    eco: string;
+    name: string;
+  } | null;
 }
 
 export interface LichessExplorerResult {
   fen: string;
-  database: 'masters';
+  database: ExplorerDatabase;
   totalGames: number;
   whiteTotal: number;
   drawsTotal: number;
@@ -53,27 +58,30 @@ export interface ExplorerResponse {
   message?: string;
 }
 
-// In-memory bounded cache for visited positions only (keyed by exact FEN)
+// In-memory bounded cache for visited positions only (keyed by exact database + FEN)
 const fenCache = new Map<string, LichessExplorerResult>();
-const MAX_CACHE_SIZE = 150;
+const MAX_CACHE_SIZE = 250;
 
 // Active AbortController for in-flight request cancellation
 let activeAbortController: AbortController | null = null;
 
 /**
- * Fetches lightweight on-demand statistics for a single exact FEN position from Lichess Masters Explorer
+ * Fetches lightweight on-demand statistics for a single exact FEN position from Lichess Openings API
  */
 export async function fetchLichessOpeningStats(
-  fen: string
+  fen: string,
+  database: ExplorerDatabase = 'masters'
 ): Promise<ExplorerResponse> {
   const cleanFen = fen?.trim() || '';
   if (!cleanFen) {
     return { status: 'error', message: 'Invalid FEN' };
   }
 
+  const cacheKey = `${database}_${cleanFen}`;
+
   // 1. Check in-memory cache first to avoid repeat requests
-  if (fenCache.has(cleanFen)) {
-    const cached = fenCache.get(cleanFen)!;
+  if (fenCache.has(cacheKey)) {
+    const cached = fenCache.get(cacheKey)!;
     return {
       status: 'success',
       data: { ...cached, isCached: true },
@@ -90,10 +98,9 @@ export async function fetchLichessOpeningStats(
   activeAbortController = new AbortController();
   const signal = activeAbortController.signal;
 
-  // 3. Build small on-demand query for Masters Opening Explorer using exact FEN
+  // 3. Build small on-demand query using exact FEN
   const encodedFen = encodeURIComponent(cleanFen);
-  // Prefer internal backend proxy endpoint which securely holds LICHESS_TOKEN
-  const endpoint = `/api/lichess/masters?fen=${encodedFen}&moves=12&topGames=0`;
+  const endpoint = `/api/lichess/${database}?fen=${encodedFen}&moves=15&topGames=0`;
 
   console.log('[Lichess Masters API] Request initiating via proxy:', {
     fen: cleanFen,
@@ -186,6 +193,8 @@ export async function fetchLichessOpeningStats(
         drawPct,
         blackWinPct,
         playPct,
+        averageRating: m.averageRating ? Number(m.averageRating) : undefined,
+        opening: m.opening && m.opening.name ? { eco: m.opening.eco || '', name: m.opening.name } : null,
       };
     });
 
@@ -209,7 +218,7 @@ export async function fetchLichessOpeningStats(
 
     const result: LichessExplorerResult = {
       fen: cleanFen,
-      database: 'masters',
+      database,
       totalGames,
       whiteTotal,
       drawsTotal,
@@ -220,7 +229,7 @@ export async function fetchLichessOpeningStats(
     };
 
     // Store in bounded cache
-    storeInCache(cleanFen, result);
+    storeInCache(cacheKey, result);
 
     return {
       status: 'success',
@@ -232,7 +241,7 @@ export async function fetchLichessOpeningStats(
       return { status: 'error', message: 'Request cancelled' };
     }
 
-    return handleNoLichessDataFallback(cleanFen, err?.message || 'Network error');
+    return handleNoLichessDataFallback(cleanFen, err?.message || 'Network error', database);
   }
 }
 
@@ -246,13 +255,17 @@ export const fetchLichessData = fetchLichessOpeningStats;
  * Never throws an error or breaks the UI; retrieves opening name/ECO from local book
  * and marks hasLichessData as false so UI displays "No opening data".
  */
-function handleNoLichessDataFallback(cleanFen: string, reason: string): ExplorerResponse {
+function handleNoLichessDataFallback(
+  cleanFen: string,
+  reason: string,
+  database: ExplorerDatabase = 'masters'
+): ExplorerResponse {
   const localOp = getOpeningFromFen(cleanFen);
   const parsedOpening = localOp ? { eco: localOp.eco, name: localOp.name } : null;
 
   const fallbackResult: LichessExplorerResult = {
     fen: cleanFen,
-    database: 'masters',
+    database,
     totalGames: 0,
     whiteTotal: 0,
     drawsTotal: 0,
@@ -263,7 +276,7 @@ function handleNoLichessDataFallback(cleanFen: string, reason: string): Explorer
   };
 
   // Cache to avoid repeat requests on the same position
-  storeInCache(cleanFen, fallbackResult);
+  storeInCache(`${database}_${cleanFen}`, fallbackResult);
 
   return {
     status: 'success',
@@ -271,10 +284,10 @@ function handleNoLichessDataFallback(cleanFen: string, reason: string): Explorer
   };
 }
 
-function storeInCache(fen: string, result: LichessExplorerResult) {
+function storeInCache(key: string, result: LichessExplorerResult) {
   if (fenCache.size >= MAX_CACHE_SIZE) {
     const firstKey = fenCache.keys().next().value;
     if (firstKey) fenCache.delete(firstKey);
   }
-  fenCache.set(fen, result);
+  fenCache.set(key, result);
 }

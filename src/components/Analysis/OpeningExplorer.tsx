@@ -76,6 +76,21 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = React.memo(({
         : `${(stockfishEval.scoreCp / 100).toFixed(2)}`)
     : '+0.00';
 
+  const isMatchBestMove = (m: LichessExplorerMove): boolean => {
+    if (bestMoveSan && m.san) {
+      const cleanMSan = m.san.replace(/[+#x!?-]/g, '').trim();
+      const cleanBMSan = bestMoveSan.replace(/[+#x!?-]/g, '').trim();
+      if (cleanMSan === cleanBMSan || m.san.trim() === bestMoveSan.trim()) return true;
+    }
+    if (stockfishEval?.bestMove) {
+      const bm: any = stockfishEval.bestMove;
+      if (m.uci && bm.rawUci && m.uci.toLowerCase() === bm.rawUci.toLowerCase()) return true;
+      if (m.uci && bm.from && bm.to && m.uci.toLowerCase() === `${bm.from}${bm.to}${bm.promotion || ''}`.toLowerCase()) return true;
+      if (typeof bm === 'string' && (m.san?.toLowerCase() === bm.toLowerCase() || m.uci?.toLowerCase() === bm.toLowerCase())) return true;
+    }
+    return false;
+  };
+
   return (
     <div className="flex flex-col h-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl text-slate-200 select-none">
       {/* Header */}
@@ -214,20 +229,40 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = React.memo(({
 
             {/* Most-Played Moves Rows */}
             {moves.map((m: LichessExplorerMove) => {
+              const isBest = isMatchBestMove(m);
               return (
                 <button
                   key={m.uci || m.san}
                   onClick={() => onSelectMove(m.san)}
-                  className="w-full grid grid-cols-12 items-center px-2 py-2 rounded-xl bg-slate-950/60 hover:bg-slate-800/90 border border-slate-800/80 hover:border-amber-500/40 transition-all text-left group cursor-pointer"
-                  title={`Play ${m.san} (${m.totalGames.toLocaleString()} games in Masters database)`}
+                  className={`w-full grid grid-cols-12 items-center px-2.5 py-2 rounded-xl border transition-all text-left group cursor-pointer ${
+                    isBest
+                      ? 'bg-gradient-to-r from-emerald-950/85 via-emerald-900/40 to-slate-900/95 border-emerald-400/90 shadow-[0_0_15px_rgba(16,185,129,0.22)] ring-1 ring-emerald-400/60'
+                      : 'bg-slate-950/60 hover:bg-slate-800/90 border-slate-800/80 hover:border-amber-500/40'
+                  }`}
+                  title={
+                    isBest
+                      ? `★ Stockfish Engine #1 Choice: ${m.san} (${m.totalGames.toLocaleString()} games in Masters database)`
+                      : `Play ${m.san} (${m.totalGames.toLocaleString()} games in Masters database)`
+                  }
                 >
                   {/* Move SAN */}
-                  <div className="col-span-2 flex items-center gap-1 font-mono font-black text-xs text-slate-100 group-hover:text-amber-300">
-                    <span>{m.san}</span>
+                  <div className="col-span-2 flex items-center gap-1 font-mono overflow-hidden">
+                    <span
+                      className={`font-black ${
+                        isBest ? 'text-sm text-emerald-200 drop-shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'text-xs text-slate-100 group-hover:text-amber-300'
+                      }`}
+                    >
+                      {m.san}
+                    </span>
+                    {isBest && (
+                      <span className="text-[8px] font-black uppercase tracking-wider px-1 py-0.2 rounded bg-emerald-500/30 text-emerald-200 border border-emerald-400/70 shrink-0">
+                        Best
+                      </span>
+                    )}
                   </div>
 
                   {/* Frequency / Play % */}
-                  <div className="col-span-2 text-center font-mono font-bold text-xs text-amber-400">
+                  <div className={`col-span-2 text-center font-mono font-bold text-xs ${isBest ? 'text-emerald-300' : 'text-amber-400'}`}>
                     {m.playPct}%
                   </div>
 
@@ -242,11 +277,11 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = React.memo(({
 
                   {/* Win/Draw/Loss visual bar with percentages */}
                   <div className="col-span-5 flex flex-col gap-1 pl-1">
-                    <div className="w-full h-3.5 rounded-full overflow-hidden flex bg-slate-800 text-[9px] font-mono font-black select-none border border-slate-700/60">
+                    <div className={`w-full h-3.5 rounded-full overflow-hidden flex bg-slate-800 text-[9px] font-mono font-black select-none border ${isBest ? 'border-emerald-400/60 shadow-inner' : 'border-slate-700/60'}`}>
                       {m.whiteWinPct > 0 && (
                         <div
                           style={{ width: `${m.whiteWinPct}%` }}
-                          className="bg-slate-100 text-slate-950 flex items-center justify-center overflow-hidden transition-all"
+                          className="bg-emerald-600 text-white flex items-center justify-center overflow-hidden transition-all"
                           title={`White Win: ${m.whiteWinPct}%`}
                         >
                           {m.whiteWinPct >= 18 && <span>{m.whiteWinPct}%</span>}
@@ -264,7 +299,7 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = React.memo(({
                       {m.blackWinPct > 0 && (
                         <div
                           style={{ width: `${m.blackWinPct}%` }}
-                          className="bg-slate-900 text-slate-300 flex items-center justify-center overflow-hidden transition-all border-l border-slate-700/40"
+                          className="bg-rose-600 text-white flex items-center justify-center overflow-hidden transition-all border-l border-slate-700/40"
                           title={`Black Win: ${m.blackWinPct}%`}
                         >
                           {m.blackWinPct >= 18 && <span>{m.blackWinPct}%</span>}
