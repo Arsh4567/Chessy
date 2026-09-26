@@ -94,6 +94,11 @@ export async function fetchLichessOpeningStats(
   const encodedFen = encodeURIComponent(cleanFen);
   const endpoint = `https://explorer.lichess.ovh/masters?fen=${encodedFen}&moves=12&topGames=0`;
 
+  console.log('[Lichess Masters API] Request initiating:', {
+    fen: cleanFen,
+    endpoint,
+  });
+
   // Optional authentication token if configured by user or environment
   const token = typeof window !== 'undefined'
     ? (localStorage.getItem('lichess_token') || (window as any).LICHESS_TOKEN || (import.meta as any).env?.VITE_LICHESS_TOKEN)
@@ -122,6 +127,7 @@ export async function fetchLichessOpeningStats(
     if (timeoutId) clearTimeout(timeoutId);
 
     if (racedResult.isTimeout) {
+      console.warn('[Lichess Masters API] Request timed out for FEN:', cleanFen);
       if (activeAbortController) {
         activeAbortController.abort();
       }
@@ -129,12 +135,22 @@ export async function fetchLichessOpeningStats(
     }
 
     const response = (racedResult as any).res as Response;
+    console.log('[Lichess Masters API] HTTP Status:', response.status, response.statusText, 'for URL:', endpoint);
 
     if (!response.ok) {
+      console.warn('[Lichess Masters API] Non-OK response:', response.status, response.statusText);
       return handleNoLichessDataFallback(cleanFen, `HTTP ${response.status}`);
     }
 
     const data = await response.json();
+    console.log('[Lichess Masters API] Parsed payload structure:', {
+      white: data.white,
+      draws: data.draws,
+      black: data.black,
+      opening: data.opening,
+      movesCount: Array.isArray(data.moves) ? data.moves.length : 0,
+      sampleMoves: Array.isArray(data.moves) ? data.moves.slice(0, 3) : [],
+    });
 
     const whiteTotal = Number(data.white || 0);
     const drawsTotal = Number(data.draws || 0);

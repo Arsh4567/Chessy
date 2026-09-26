@@ -65,6 +65,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   });
   const analysisControllerRef = useRef<ProgressiveAnalysisController | null>(null);
 
+  const currentMove =
+    currentMoveIdx >= 0 && analyzedData?.analyzedMoves
+      ? analyzedData.analyzedMoves[currentMoveIdx]
+      : null;
+
   // Update evaluation bar instantly from analyzed move data when stepping through positions
   useEffect(() => {
     if (currentMoveIdx >= 0 && analyzedData?.analyzedMoves[currentMoveIdx]) {
@@ -291,11 +296,6 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   const displayEval = stockfishEval.mate !== undefined
     ? `M${Math.abs(stockfishEval.mate)}`
     : `${stockfishEval.scoreCp > 0 ? '+' : ''}${(stockfishEval.scoreCp / 100).toFixed(2)}`;
-
-  const currentMove =
-    currentMoveIdx >= 0 && analyzedData?.analyzedMoves
-      ? analyzedData.analyzedMoves[currentMoveIdx]
-      : null;
 
   const opening = detectOpening(analyzedData?.analyzedMoves.map((m) => m.san) || []);
 

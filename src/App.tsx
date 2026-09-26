@@ -215,10 +215,19 @@ export default function App() {
   // Evaluate any position with real Stockfish engine using user-defined depth and fetch Lichess data in parallel
   const evaluateCurrentPosition = useCallback(async (fen: string, depth?: number) => {
     const targetDepth = depth !== undefined ? depth : evaluationDepthRef.current;
+    console.log('[evaluateCurrentPosition] Initiating evaluation for FEN:', fen, '| targetDepth:', targetDepth);
 
     // Trigger Lichess Masters data fetch alongside Stockfish evaluation (completely decoupled)
     fetchLichessData(fen)
       .then((res) => {
+        console.log('[evaluateCurrentPosition -> fetchLichessData] Received response:', {
+          status: res.status,
+          hasData: Boolean(res.data),
+          totalGames: res.data?.totalGames,
+          movesCount: res.data?.moves?.length,
+          openingName: res.data?.opening?.name,
+          isCached: res.data?.isCached,
+        });
         if (res.status === 'success' && res.data) {
           setLichessData(res.data);
         } else {
@@ -227,7 +236,7 @@ export default function App() {
       })
       .catch((err) => {
         // Lichess failures must NEVER affect the Stockfish pipeline
-        console.warn('Lichess fetch non-fatal error:', err);
+        console.warn('[evaluateCurrentPosition -> fetchLichessData] Lichess fetch non-fatal error:', err);
         setLichessData(null);
       });
 
