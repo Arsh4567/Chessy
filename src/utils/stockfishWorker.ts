@@ -1,7 +1,14 @@
 /**
- * Stockfish 19 WebAssembly Engine UCI Integration
- * Communicates via standard Web Worker UCI protocol with resilient command queue,
- * concurrency locking, and graceful fallback.
+ * Stockfish 19 WebAssembly Engine UCI Integration (Optimized)
+ * 
+ * Performance & CPU Optimization Highlights:
+ * 1. Lazy initialization: Web Worker is only loaded on first explicit request, never on app bootstrap.
+ * 2. Strict single-instance management: Guarantees zero duplicate workers.
+ * 3. Instant cancellation: Outdated search requests are immediately superseded via 'stop' UCI commands.
+ * 4. Fast Transposition Cache: Normalized FEN cache avoids re-running engine for known/transposed states.
+ * 5. Throttled UI broadcasting: Stockfish 'info' lines are intelligently batched (~60ms) to prevent React re-render thrashing.
+ * 6. Bounded continuous analysis: Automatically prevents infinite CPU spinning beyond depth 24.
+ * 7. In-memory PV SAN caching: Prevents redundant 'new Chess()' allocations.
  */
 
 import { Chess } from 'chess.js';
@@ -49,8 +56,7 @@ export function parseUciMove(uciMove: string): ParsedMove | null {
 
 /**
  * Normalizes a FEN string for high-hit-rate transposition caching.
- * Tokens 0..3 (board, turn, castling, en-passant) define the tactical evaluation.
- * If the halfmove clock is < 80, the halfmove and fullmove counts can be safely ignored.
+ * Tokens 0..3 (board, turn, castling, en-passant) define tactical evaluation.
  */
 export function normalizeFenForCache(fen: string): string {
   if (!fen) return '';
@@ -93,18 +99,19 @@ export class StockfishEngine {
   private listeners: ((evaluation: StockfishEvaluation) => void)[] = [];
   private rawListeners: ((line: string) => void)[] = [];
   private fenEvalCache: Map<string, StockfishEvaluation> = new Map();
-  private readonly MAX_FEN_CACHE = 1500;
+  private readonly MAX_FEN_CACHE = 2000;
 
+  // Constructor is intentionally lightweight: does NOT spawn Worker on page load
   constructor() {
-    this.init();
+    // Lazy: worker will be created on first actual call to ensureReady() / evaluatePosition()
   }
 
   /**
    * Configures optimal Stockfish performance options:
-   * - 32MB transposition table (Hash) speeds up repeat searches by ~300%
-   * - UCI_AnalyseMode enables analysis-specific heuristics and pruning
-   * - Ponder false eliminates wasted CPU cycles
-   * - Low Move Overhead eliminates UI lag
+   * - 32MB transposition table (Hash)
+   * - UCI_AnalyseMode enabled
+   * - Ponder disabled to avoid idle background burn
+   * - Low Move Overhead
    */
   public configureEngineDefaults() {
     this.sendCommand('setoption name Hash value 32');
@@ -113,6 +120,9 @@ export class StockfishEngine {
     this.sendCommand('setoption name Move Overhead value 10');
   }
 
+  /**
+   * Lazy initialization helper. Only executed when Stockfish is actually needed.
+   */
   public init(): Promise<boolean> {
     if (this.initPromise) return this.initPromise;
     this.isInitializing = true;
@@ -120,7 +130,7 @@ export class StockfishEngine {
     this.initPromise = new Promise((resolve) => {
       try {
         if (typeof window === 'undefined' || typeof Worker === 'undefined') {
-          // Node.js environment: spawn Stockfish binary for server / testing
+          // Node.js environment
           try {
             // eslint-disable-next-line @typescript-eslint/no-require-imports
             const cp = require('child_process');
@@ -132,11 +142,8 @@ export class StockfishEngine {
             proc.stdout.on('data', (d: Buffer) => {
               this.handleWorkerMessage(d.toString());
             });
-            proc.stderr.on('data', (d: Buffer) => {
-              console.warn('[Stockfish stderr]:', d.toString());
-            });
-            proc.on('error', (err: any) => {
-              console.warn('[Stockfish proc error]:', err);
+            proc.stderr.on('data', () => {});
+            proc.on('error', () => {
               this.workerFailed = true;
               this.isReady = true;
             });
@@ -145,9 +152,7 @@ export class StockfishEngine {
               postMessage: (cmd: string) => {
                 try {
                   proc.stdin.write(cmd + '\n');
-                } catch (e) {
-                  console.warn('Error writing to stockfish proc:', e);
-                }
+                } catch {}
               },
               terminate: () => {
                 try {
@@ -173,7 +178,7 @@ export class StockfishEngine {
             if (err && typeof err.preventDefault === 'function') {
               err.preventDefault();
             }
-            console.warn('[Stockfish] Worker error trapped, switching safely to heuristic fallback:', err?.message || err);
+            console.warn('[Stockfish] Worker notice, falling back smoothly to heuristics:', err?.message || err);
             this.workerFailed = true;
             this.isReady = true;
             this.isSearching = false;
@@ -184,12 +189,12 @@ export class StockfishEngine {
         this.sendCommand('uci');
         this.sendCommand('isready');
 
-        // Check ready callback with 4000ms timeout
+        // Check ready callback with 3500ms timeout
         const readyTimeout = setTimeout(() => {
           this.isReady = true;
           this.isInitializing = false;
           resolve(true);
-        }, 4000);
+        }, 3500);
 
         const onFirstReady = (line: string) => {
           if (line.includes('readyok') || line.includes('uciok')) {
@@ -219,7 +224,7 @@ export class StockfishEngine {
     return this.init();
   }
 
-  public async waitReady(timeoutMs: number = 2000): Promise<boolean> {
+  public async waitReady(timeoutMs: number = 1500): Promise<boolean> {
     if (!this.worker || this.workerFailed) return false;
     return new Promise<boolean>((resolve) => {
       let resolved = false;
@@ -270,8 +275,8 @@ export class StockfishEngine {
 
   /**
    * Fast, non-blocking search cancellation.
-   * If not searching, returns instantly in 0ms.
-   * If searching, issues 'stop' and resolves as soon as the engine outputs 'bestmove' (typically <5ms).
+   * If not searching, returns immediately in 0ms.
+   * If searching, issues 'stop' to prevent CPU waste on outdated positions.
    */
   public async stopActiveSearch(): Promise<void> {
     if (!this.worker || this.workerFailed || !this.isSearching) {
@@ -290,7 +295,7 @@ export class StockfishEngine {
         }
       };
 
-      const timer = setTimeout(done, 60);
+      const timer = setTimeout(done, 40);
 
       const onLine = (line: string) => {
         if (line.startsWith('bestmove') || line.includes('readyok')) {
@@ -315,9 +320,7 @@ export class StockfishEngine {
       for (let i = 0; i < this.rawListeners.length; i++) {
         try {
           this.rawListeners[i](line);
-        } catch {
-          // ignore subscriber errors
-        }
+        } catch {}
       }
 
       if (line === 'readyok' || line === 'uciok') {
@@ -336,9 +339,7 @@ export class StockfishEngine {
           for (let i = 0; i < this.listeners.length; i++) {
             try {
               this.listeners[i](parsed);
-            } catch {
-              // ignore
-            }
+            } catch {}
           }
         }
       }
@@ -348,7 +349,6 @@ export class StockfishEngine {
         this.isSearching = false;
         const parts = line.split(/\s+/);
         const rawUci = parts[1];
-
         const parsedMove = parseUciMove(rawUci);
 
         // Resolve active best move query
@@ -476,7 +476,7 @@ export class StockfishEngine {
     fen: string,
     skillLevel: number = 10,
     depth: number = 16,
-    movetimeMs: number = 2500
+    movetimeMs: number = 2000
   ): Promise<ParsedMove | null> {
     const run = async (): Promise<ParsedMove | null> => {
       try {
@@ -499,7 +499,7 @@ export class StockfishEngine {
               await this.stopActiveSearch();
               resolve(null);
             }
-          }, Math.max(movetimeMs + 400, 1000));
+          }, Math.max(movetimeMs + 300, 800));
 
           this.currentSearchResolve = (move) => {
             clearTimeout(timer);
@@ -509,7 +509,6 @@ export class StockfishEngine {
 
           this.setSkillLevel(skillLevel);
           this.sendCommand(`position fen ${fen}`);
-          // Specifying depth allows the engine to return instantly once the target depth is reached
           if (depth && depth > 0) {
             this.sendCommand(`go depth ${depth} movetime ${movetimeMs}`);
           } else {
@@ -565,7 +564,7 @@ export class StockfishEngine {
         };
       }
 
-      // Material + simple positional evaluation
+      // Material + positional valuation
       const board = c.board();
       let scoreCp = 0;
       const values: Record<string, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
@@ -606,8 +605,7 @@ export class StockfishEngine {
 
   /**
    * Evaluates a position with Stockfish with guaranteed serialization, transposition caching, and fallback.
-   * Supports deep search with optional movetime budget and live progress streaming.
-   * Automatically supersedes outdated queued requests so UI feels instantaneous.
+   * Automatically supersedes outdated queued requests so CPU is preserved for active position.
    */
   public async evaluatePosition(
     fen: string,
@@ -628,7 +626,7 @@ export class StockfishEngine {
     const currentReqId = ++this.currentEvalRequestId;
 
     const run = async (): Promise<StockfishEvaluation> => {
-      // If a newer request was dispatched while this was queued, abort to save calculation time
+      // If a newer request was dispatched while this was waiting, abort immediately
       if (currentReqId !== this.currentEvalRequestId) {
         const lateCached = this.fenEvalCache.get(cacheKey) || this.fenEvalCache.get(cleanFen);
         if (lateCached) return lateCached;
@@ -636,7 +634,6 @@ export class StockfishEngine {
       }
 
       try {
-        // Double check cache before acquiring worker
         const cachedInner = this.fenEvalCache.get(cacheKey) || this.fenEvalCache.get(cleanFen);
         if (cachedInner && cachedInner.depth >= depth && cachedInner.bestMove) {
           if (onProgress) onProgress(cachedInner);
@@ -661,7 +658,7 @@ export class StockfishEngine {
         const parts = cleanFen.split(/\s+/);
         this.currentSideToMove = parts.length > 1 && parts[1] === 'b' ? 'b' : 'w';
 
-        // Check if position is game over first
+        // Check if position is game over first without deep search
         try {
           const c = new Chess(cleanFen);
           if (c.isGameOver()) {
@@ -677,7 +674,6 @@ export class StockfishEngine {
           depth: 0,
         };
 
-        // Emit instant baseline eval so UI responds immediately with 0 delay
         if (onProgress) {
           onProgress(initialFallback);
         }
@@ -685,7 +681,7 @@ export class StockfishEngine {
         return await new Promise<StockfishEvaluation>((resolve) => {
           this.isSearching = true;
           let settled = false;
-          const maxWait = movetimeMs ? Math.min(movetimeMs + 350, 4000) : 3500;
+          const maxWait = movetimeMs ? Math.min(movetimeMs + 300, 3500) : 3000;
 
           const finish = (result: StockfishEvaluation) => {
             if (!settled) {
@@ -695,7 +691,7 @@ export class StockfishEngine {
               this.currentEvalResolve = null;
               this.rawListeners = this.rawListeners.filter((l) => l !== onLine);
 
-              // Cache evaluated position under both normalized key and clean Fen
+              // Cache evaluated position
               if (result.depth >= 6) {
                 if (this.fenEvalCache.size >= this.MAX_FEN_CACHE) {
                   const firstKey = this.fenEvalCache.keys().next().value;
@@ -761,12 +757,10 @@ export class StockfishEngine {
   private currentAnalysisSessionId: number = 0;
 
   /**
-   * Starts continuous, infinite Stockfish analysis for the selected position.
-   * Keeps sending live updates for depth, eval, PV, nodes, nps, and best move as depth increases.
-   * Throttles UI updates to ~15fps (approx 70ms) to prevent main-thread saturation and board lag,
-   * while allowing the Stockfish Web Worker to calculate at 100% capacity.
-   * Immediately stops prior analysis and starts analyzing the new position.
-   * Returns a cleanup function to immediately stop the analysis when the position changes.
+   * Starts continuous, throttled Stockfish analysis for the selected position.
+   * Throttles UI updates to ~16fps (approx 60ms) to eliminate main-thread lag.
+   * Bounded: Caps continuous analysis when reaching depth 24 or after 6 seconds of search.
+   * Immediately stops prior analysis and frees the worker.
    */
   public startContinuousAnalysis(
     fen: string,
@@ -779,11 +773,12 @@ export class StockfishEngine {
     let lastUpdateTime = 0;
     let pendingEval: StockfishEvaluation | null = null;
     let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+    let searchCappedTimer: ReturnType<typeof setTimeout> | null = null;
 
     const cleanFen = fen.trim();
     const cacheKey = normalizeFenForCache(cleanFen);
 
-    // If already in cache, broadcast immediately for instant 0ms visual feedback
+    // If already in cache, broadcast immediately for instant feedback
     const cached = this.fenEvalCache.get(cacheKey) || this.fenEvalCache.get(cleanFen);
     if (cached) {
       onUpdate(cached);
@@ -823,24 +818,38 @@ export class StockfishEngine {
           return;
         }
 
-        // Subscribe to live continuous evaluation updates from worker info lines with smart throttling
+        // Subscribe to live continuous evaluation updates with smart throttling
         removeListener = this.onEvaluation((evalResult) => {
           if (!isActive || sessionId !== this.currentAnalysisSessionId) return;
           pendingEval = evalResult;
           const now = performance.now();
 
-          // Dispatch immediately on first depth or substantial intervals (70ms) or mate discoveries
-          if (evalResult.depth <= 2 || evalResult.mate !== undefined || now - lastUpdateTime >= 70) {
+          // Cap deep continuous search at depth 24 to save CPU
+          if (evalResult.depth >= 24) {
+            this.sendCommand('stop');
+            this.isSearching = false;
+          }
+
+          // Dispatch immediately on first depth or intervals (60ms) or mate discoveries
+          if (evalResult.depth <= 2 || evalResult.mate !== undefined || now - lastUpdateTime >= 60) {
             flushUpdate();
           } else if (!throttleTimer) {
-            throttleTimer = setTimeout(flushUpdate, 70 - (now - lastUpdateTime));
+            throttleTimer = setTimeout(flushUpdate, 60 - (now - lastUpdateTime));
           }
         });
 
         this.setSkillLevel(20);
         this.sendCommand(`position fen ${this.currentFen}`);
-        this.sendCommand('go infinite');
+        this.sendCommand('go depth 24');
         this.isSearching = true;
+
+        // Guard against continuous battery drain: stop search after 6 seconds of deep calculation
+        searchCappedTimer = setTimeout(() => {
+          if (isActive && sessionId === this.currentAnalysisSessionId && this.isSearching) {
+            this.sendCommand('stop');
+            this.isSearching = false;
+          }
+        }, 6000);
       } catch (err) {
         console.warn('[Stockfish] Continuous analysis error:', err);
       }
@@ -853,6 +862,10 @@ export class StockfishEngine {
       if (throttleTimer) {
         clearTimeout(throttleTimer);
         throttleTimer = null;
+      }
+      if (searchCappedTimer) {
+        clearTimeout(searchCappedTimer);
+        searchCappedTimer = null;
       }
       if (removeListener) {
         removeListener();
@@ -868,7 +881,7 @@ export class StockfishEngine {
 
 // High-speed LRU Cache for formatted Principal Variation (PV) SAN lines
 const pvSanCache = new Map<string, string[]>();
-const MAX_PV_CACHE_SIZE = 150;
+const MAX_PV_CACHE_SIZE = 300;
 
 /**
  * Formats engine raw PV UCI moves into readable SAN chess notation with caching
@@ -905,5 +918,5 @@ export function formatPvToSan(fen: string, pvUci?: string[]): string[] {
   }
 }
 
-// Global Singleton
+// Global Singleton (Lazy: does not spawn worker until needed)
 export const stockfish = new StockfishEngine();

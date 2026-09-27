@@ -6,13 +6,14 @@
  * - "Book / Theory" describes opening database theory and NEVER overrides Stockfish.
  * - Progressive streaming: results appear immediately as each move finishes.
  * - Never blocks the main UI thread.
+ * - Fast abort: halts Stockfish immediately on cancellation.
  */
 
 import { Chess, Move } from 'chess.js';
 import { AnalyzedGame, AnalyzedMove, PieceType } from '../types/chess';
 import { stockfish, StockfishEvaluation } from './stockfishWorker';
 import { detectOpening } from './openings';
-import { classifyEngineMove, calculateGameAccuracy, MOVE_QUALITY_SIGNS } from './moveClassification';
+import { classifyEngineMove, calculateGameAccuracy } from './moveClassification';
 
 // Global In-Memory LRU Game Analysis Cache (max 100 games)
 const gameAnalysisCache = new Map<string, AnalyzedGame>();
@@ -33,7 +34,6 @@ export function setCachedGameAnalysis(cacheKey: string, result: AnalyzedGame): v
 /**
  * Instantly parses moves from PGN or move array in <2ms with zero main-thread blockage.
  * Generates valid FENs, SANs, and piece movements immediately so UI displays right away.
- * IMPORTANT: Move classification and Book marks remain UNASSIGNED until Stockfish evaluates them!
  */
 export function parseGameMovesInstantly(
   moves: { from: string; to: string; promotion?: string }[],
@@ -79,8 +79,8 @@ export function parseGameMovesInstantly(
       eval: 0,
       evalBefore: 0,
       evalLoss: 0,
-      classification: undefined, // Strictly assigned when Stockfish evaluates
-      isBookMove: false, // Never mark as Book Move fallback!
+      classification: undefined, // Assigned when Stockfish evaluates
+      isBookMove: false,
       openingName: undefined,
       commentary: undefined,
     });
@@ -112,11 +112,19 @@ export interface ProgressiveAnalysisController {
   isAborted: boolean;
 }
 
+// In-memory cache for best move SAN resolution to avoid allocating new Chess instances
+const bestMoveSanCache = new Map<string, string>();
+const MAX_SAN_CACHE = 400;
+
 /**
  * Converts a parsed Stockfish UCI move (e.g. { from: 'e2', to: 'e4' }) into SAN notation (e.g. 'e4')
  */
 function getBestMoveSan(fen: string, bestMove?: { from: string; to: string; promotion?: string }): string {
   if (!bestMove) return '';
+  const key = `${fen}|${bestMove.from}${bestMove.to}${bestMove.promotion || ''}`;
+  const cached = bestMoveSanCache.get(key);
+  if (cached !== undefined) return cached;
+
   try {
     const c = new Chess(fen);
     const m = c.move({
@@ -124,7 +132,13 @@ function getBestMoveSan(fen: string, bestMove?: { from: string; to: string; prom
       to: bestMove.to,
       promotion: bestMove.promotion,
     });
-    return m ? m.san : '';
+    const san = m ? m.san : '';
+    if (bestMoveSanCache.size >= MAX_SAN_CACHE) {
+      const first = bestMoveSanCache.keys().next().value;
+      if (first) bestMoveSanCache.delete(first);
+    }
+    bestMoveSanCache.set(key, san);
+    return san;
   } catch {
     return '';
   }
@@ -132,16 +146,6 @@ function getBestMoveSan(fen: string, bestMove?: { from: string; to: string; prom
 
 /**
  * Analyzes full chess game asynchronously through the Stockfish Web Worker.
- * 
- * Pipeline:
- * 1. Generates position FEN immediately before and after every move.
- * 2. Runs Stockfish calculation on all positions (including move 1 and opening moves).
- * 3. Calculates evaluation before vs. after from moving player's perspective:
- *    - For White: evalLoss = beforeScore - playedMoveScore
- *    - For Black: evalLoss = playedMoveScore - beforeScore
- * 4. Assigns genuine Stockfish move mark (Brilliant, Best, Excellent, Good, Inaccuracy, Mistake, Blunder).
- * 5. Opening theory is tracked as a separate informational badge and NEVER overrides Stockfish.
- * 6. Progressively streams results move-by-move.
  */
 export function analyzeGameProgressively(
   rawMoves: { from: string; to: string; promotion?: string }[],
@@ -156,12 +160,12 @@ export function analyzeGameProgressively(
   }
 ): ProgressiveAnalysisController {
   let isAborted = false;
-  const maxBudgetMs = options?.maxBudgetMs || 45000;
+  const maxBudgetMs = options?.maxBudgetMs || 40000;
   const stockfishDepth = options?.stockfishDepth || 14;
-  const movetimeMs = options?.movetimeMs || 100;
+  const movetimeMs = options?.movetimeMs || 80;
   const startTime = performance.now();
 
-  // 1. Check in-memory LRU cache first (only if it has fully evaluated moves)
+  // 1. Check in-memory LRU cache first
   const cached = getCachedGameAnalysis(cacheKey);
   if (cached && cached.analyzedMoves.length > 0 && cached.analyzedMoves[0].classification) {
     setTimeout(() => {
@@ -171,23 +175,23 @@ export function analyzeGameProgressively(
       }
     }, 0);
     return {
-      abort: () => { isAborted = true; },
+      abort: () => {
+        isAborted = true;
+        stockfish.stopActiveSearch().catch(() => {});
+      },
       isAborted: false,
     };
   }
 
-  // 2. Extract verified moves and FEN sequence from PGN or move array
+  // 2. Extract verified moves and FEN sequence
   const sim = new Chess();
   if (initialPgn && initialPgn.trim()) {
     try {
       sim.loadPgn(initialPgn.trim());
-    } catch (e) {
-      console.warn('[Stockfish Analysis] PGN load error:', e);
-    }
+    } catch {}
   }
 
   let verboseHistory = sim.history({ verbose: true });
-  // Fall back to rawMoves if PGN had no history
   if (verboseHistory.length === 0 && rawMoves.length > 0) {
     sim.reset();
     for (const m of rawMoves) {
@@ -200,9 +204,8 @@ export function analyzeGameProgressively(
     verboseHistory = sim.history({ verbose: true });
   }
 
-  // Rebuild replay positions from initial starting FEN
   const replayChess = new Chess();
-  const fens: string[] = [replayChess.fen()]; // fens[0] = starting position
+  const fens: string[] = [replayChess.fen()];
   const moveResults: Move[] = [];
   const sanHistory: string[] = [];
 
@@ -220,7 +223,7 @@ export function analyzeGameProgressively(
 
   const validMovesCount = moveResults.length;
 
-  // 3. Produce instant baseline game representation in <2ms
+  // 3. Instant baseline representation
   const initialMoves: AnalyzedMove[] = moveResults.map((m, i) => ({
     san: m.san,
     from: m.from,
@@ -233,7 +236,7 @@ export function analyzeGameProgressively(
     eval: 0,
     evalBefore: 0,
     evalLoss: 0,
-    classification: undefined, // Pending Stockfish evaluation
+    classification: undefined,
     isBookMove: false,
     openingName: undefined,
     commentary: undefined,
@@ -267,17 +270,19 @@ export function analyzeGameProgressively(
       }
     }, 0);
     return {
-      abort: () => { isAborted = true; },
+      abort: () => {
+        isAborted = true;
+        stockfish.stopActiveSearch().catch(() => {});
+      },
       isAborted: false,
     };
   }
 
-  // Broadcast instant initial layout immediately
+  // Broadcast instant initial layout
   onProgress(initialGame, 0, 5);
 
   const analyzedMoves: AnalyzedMove[] = [...initialMoves];
 
-  // Cumulative Classification Counters
   let whiteBrilliants = 0;
   let blackBrilliants = 0;
   let whiteBests = 0;
@@ -296,9 +301,6 @@ export function analyzeGameProgressively(
   // Asynchronous Worker Loop
   const runAsyncAnalysis = async () => {
     try {
-      console.log('ANALYZE START');
-
-      // Step A: Evaluate initial starting position (FEN 0) with Stockfish (depth 16-24)
       const initialFen = fens[0];
       let prevEval: StockfishEvaluation = await stockfish.evaluatePosition(initialFen, stockfishDepth, movetimeMs);
       let prevBestMoveSan = getBestMoveSan(initialFen, prevEval.bestMove);
@@ -308,7 +310,6 @@ export function analyzeGameProgressively(
 
         // Check budget timeout
         if (performance.now() - startTime > maxBudgetMs) {
-          console.warn('[Stockfish Analysis] Budget timeout reached after', Math.round(performance.now() - startTime), 'ms');
           break;
         }
 
@@ -318,46 +319,32 @@ export function analyzeGameProgressively(
         const moveNumber = Math.floor(i / 2) + 1;
         const turn = moveResult.color;
 
-        // Required debug logging for the first 5 moves
-        if (i < 5) {
-          console.log('ANALYZE START');
-          console.log('moveNumber:', moveNumber);
-          console.log('SAN:', moveResult.san);
-          console.log('FEN before:', fenBefore);
-          console.log('FEN after:', fenAfter);
-          console.log('STOCKFISH REQUEST SENT:', fenAfter);
-        }
-
-        // Step B: Run Stockfish evaluation on position AFTER the move (fast opening moves, deep middlegame)
+        // Run Stockfish evaluation on position after the move
         const moveDepth = moveNumber <= 4 ? Math.min(stockfishDepth, 12) : stockfishDepth;
-        const moveTime = moveNumber <= 4 ? Math.min(movetimeMs, 75) : movetimeMs;
+        const moveTime = moveNumber <= 4 ? Math.min(movetimeMs, 60) : movetimeMs;
         const currentEval: StockfishEvaluation = await stockfish.evaluatePosition(fenAfter, moveDepth, moveTime);
+        if (isAborted) return;
+
         const currentBestMoveSan = getBestMoveSan(fenAfter, currentEval.bestMove);
 
-        // Before score (from White's perspective) and After score (from White's perspective)
         const beforeScore = prevEval.scoreCp;
         const playedMoveScore = currentEval.scoreCp;
         const bestMoveSan = prevBestMoveSan;
 
-        // Evaluations are in White's perspective (+ = White advantage, - = Black advantage).
-        // Calculate evaluation loss strictly from the perspective of the player who made the move:
-        // - For White: loss = beforeScore - playedMoveScore (evalBefore - evalAfter)
-        // - For Black: loss = playedMoveScore - beforeScore (evalAfter - evalBefore)
         const isWhite = turn === 'w';
         const rawLoss = isWhite
           ? (beforeScore - playedMoveScore)
           : (playedMoveScore - beforeScore);
         const evalLoss = Math.max(0, rawLoss);
 
-        // Check opening theory separately for informational display only
+        // Check opening theory
         const openingInfo = moveNumber <= 15 ? detectOpening(sanHistory.slice(0, i + 1)) : undefined;
         const isBookMove = Boolean(openingInfo);
         const openingName = openingInfo?.name;
 
-        // Clone position before move for tactical checks
         const beforeClone = new Chess(fenBefore);
 
-        // Step C: Classify move with genuine Stockfish evaluation delta
+        // Classify move
         const { classification, commentary } = classifyEngineMove(
           beforeClone,
           moveResult,
@@ -367,17 +354,7 @@ export function analyzeGameProgressively(
           moveNumber
         );
 
-        // Required debug logging for first 5 moves
-        if (i < 5) {
-          console.log('STOCKFISH SCORE RECEIVED:', currentEval.scoreCp);
-          console.log('bestmove:', bestMoveSan || currentBestMoveSan || 'none');
-          console.log('evalBefore:', +(beforeScore / 100).toFixed(2));
-          console.log('evalAfter:', +(playedMoveScore / 100).toFixed(2));
-          console.log('evalLoss:', +(evalLoss / 100).toFixed(2));
-          console.log('FINAL CLASSIFICATION:', classification);
-        }
-
-        // Aggregate classification metrics
+        // Aggregate metrics
         if (turn === 'w') {
           if (classification === 'brilliant') whiteBrilliants++;
           else if (classification === 'great' || classification === 'best') whiteBests++;
@@ -418,11 +395,10 @@ export function analyzeGameProgressively(
           commentary,
         };
 
-        // Advance before evaluation to current position for next move
         prevEval = currentEval;
         prevBestMoveSan = currentBestMoveSan;
 
-        // Step D: Progressive UI broadcast
+        // Progressive UI broadcast
         const { whiteAccuracy, blackAccuracy } = calculateGameAccuracy(analyzedMoves.slice(0, i + 1));
         const progressPercent = Math.min(100, Math.round(((i + 1) / validMovesCount) * 100));
 
@@ -454,7 +430,7 @@ export function analyzeGameProgressively(
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
-      // Step E: Completion
+      // Completion
       const finalAccuracy = calculateGameAccuracy(analyzedMoves);
       const finalResult: AnalyzedGame = {
         analyzedMoves: [...analyzedMoves],
@@ -481,16 +457,16 @@ export function analyzeGameProgressively(
         onComplete(finalResult);
       }
     } catch (err) {
-      console.warn('[Stockfish Analysis] Error in progressive analysis pipeline:', err);
+      console.warn('[Stockfish Analysis] Pipeline error:', err);
     }
   };
 
-  // Launch async worker pipeline
   setTimeout(runAsyncAnalysis, 0);
 
   return {
     abort: () => {
       isAborted = true;
+      stockfish.stopActiveSearch().catch(() => {});
     },
     get isAborted() {
       return isAborted;

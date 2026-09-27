@@ -156,10 +156,12 @@ export function useChessGame({
     evaluateCurrentPosition(chessRef.current.fen(), clampedDepth);
   }, [evaluateCurrentPosition]);
 
-  // Run initial evaluation on mount
+  // Stop any active searches on unmount
   useEffect(() => {
-    evaluateCurrentPosition(chess.fen());
-  }, [evaluateCurrentPosition]);
+    return () => {
+      stockfish.stopActiveSearch().catch(() => {});
+    };
+  }, []);
 
   // Handle Game Over
   const handleGameOver = useCallback((result: 'win' | 'loss' | 'draw', reason: string, customHistory?: AnalyzedMove[]) => {

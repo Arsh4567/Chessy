@@ -41,7 +41,7 @@ interface FriendsHubProps {
 type SocialTab = 'friends' | 'challenges' | 'requests' | 'search';
 
 export const FriendsHub: React.FC<FriendsHubProps> = ({ onStartDirectMatch }) => {
-  const { user, signInWithGoogle } = useAuth();
+  const { user, openAuthModal } = useAuth();
   const [activeTab, setActiveTab] = useState<SocialTab>('friends');
 
   const [friends, setFriends] = useState<FriendUser[]>([]);
@@ -212,10 +212,10 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({ onStartDirectMatch }) =>
           </p>
         </div>
         <button
-          onClick={() => signInWithGoogle()}
+          onClick={() => openAuthModal('login')}
           className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm inline-flex items-center gap-2 shadow-md transition-all cursor-pointer"
         >
-          <span>Sign In to Connect</span>
+          <span>Sign In / Register</span>
         </button>
       </div>
     );

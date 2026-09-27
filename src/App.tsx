@@ -13,11 +13,15 @@ import {
   recordPuzzleSolved,
   UserPreferences,
   UserStats,
+  DEFAULT_STATS,
+  DEFAULT_PREFERENCES,
   syncUserDataFromFirestore,
   getActiveFirebaseUserId,
-  setActiveFirebaseUserId
+  setActiveFirebaseUserId,
+  clearUserSessionData
 } from './utils/storage';
 import { useAuth } from './context/AuthContext';
+import { AuthModal } from './components/Auth/AuthModal';
 import { stockfish } from './utils/stockfishWorker';
 import { Navbar, NavTab } from './components/Navigation/Navbar';
 import { GameOverModal } from './components/Game/GameOverModal';
@@ -79,12 +83,9 @@ export default function App() {
     return cleanup;
   }, []);
   useEffect(() => {
-    const targetUid = user ? user.uid : getActiveFirebaseUserId();
     if (user?.uid) {
       setActiveFirebaseUserId(user.uid);
-    }
-    if (targetUid) {
-      syncUserDataFromFirestore(targetUid)
+      syncUserDataFromFirestore(user.uid)
         .then(({ stats: syncedStats, prefs: syncedPrefs }) => {
           setStats({ ...syncedStats });
           setPreferences({ ...syncedPrefs });
@@ -92,6 +93,11 @@ export default function App() {
         .catch((err) => {
           console.warn('Firebase Firestore sync notice:', err);
         });
+    } else {
+      // User signed out: reset in-memory state cleanly
+      clearUserSessionData();
+      setStats({ ...DEFAULT_STATS });
+      setPreferences({ ...DEFAULT_PREFERENCES });
     }
   }, [user]);
 
@@ -177,6 +183,13 @@ export default function App() {
   useEffect(() => {
     sound.setMuted(!preferences.soundEnabled);
   }, [preferences.soundEnabled]);
+
+  // Stop Stockfish calculations immediately when switching away from active analysis / play tabs
+  useEffect(() => {
+    if (activeTab !== 'analyze' && activeTab !== 'play' && activeTab !== 'learn') {
+      stockfish.stopActiveSearch().catch(() => {});
+    }
+  }, [activeTab]);
 
   // Handle Preferences update
   const handleUpdatePreferences = (newPrefs: UserPreferences) => {
@@ -564,6 +577,9 @@ export default function App() {
           setActiveTab('friends');
         }}
       />
+
+      {/* Global Authentication Modal (Login / Sign Up / Forgot Password / Guest) */}
+      <AuthModal />
 
       {/* Cross-Browser & In-App Web Push Notification Toast */}
       <GlobalPushToast onNavigateTab={(tab) => setActiveTab(tab as any)} />

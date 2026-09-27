@@ -44,7 +44,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   multiplayerRating = 800,
   multiplayerGamesPlayed = 0,
 }) => {
-  const { user, signInWithGoogle, loading } = useAuth();
+  const { user, isAnonymous, openAuthModal, loading } = useAuth();
   const [moreDropdownOpen, setMoreDropdownOpen] = useState(false);
 
   const primaryNav = [
@@ -158,7 +158,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ? 'bg-slate-800 text-white border border-slate-700'
                   : 'bg-slate-900/80 border border-slate-800/90 text-slate-200 hover:border-slate-700'
               }`}
-              title={`Multiplayer: ${multiplayerRating} Elo • Tactics: ${puzzleRating}`}
+              title={isAnonymous ? 'Playing as Guest' : `Multiplayer: ${multiplayerRating} Elo • Tactics: ${puzzleRating}`}
             >
               {user?.photoURL ? (
                 <img src={user.photoURL} alt={user.displayName || 'User'} className="w-4 h-4 rounded-full" />
@@ -167,18 +167,24 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
               <span className="font-bold text-amber-400">{multiplayerRating}</span>
               <span className="text-slate-400 font-normal">Elo</span>
-              <Cloud className="w-3 h-3 text-emerald-400/80" />
+              {isAnonymous ? (
+                <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono">
+                  Guest
+                </span>
+              ) : user ? (
+                <Cloud className="w-3 h-3 text-emerald-400/80" />
+              ) : null}
             </button>
 
-            {/* Google Sign In Button if not logged in */}
-            {!user && !loading && (
+            {/* Sign In / Link Account Button */}
+            {(!user || isAnonymous) && !loading && (
               <button
-                onClick={() => signInWithGoogle()}
+                onClick={() => openAuthModal(isAnonymous ? 'signup' : 'login')}
                 className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-bold transition-all cursor-pointer hidden sm:flex items-center gap-1.5"
-                title="Sign in with Google to sync Elo ratings and match history across devices in Firebase Firestore"
+                title={isAnonymous ? 'Create account to save your ratings' : 'Sign In or Register'}
               >
                 <LogIn className="w-3.5 h-3.5" />
-                <span>Sign In</span>
+                <span>{isAnonymous ? 'Save Progress' : 'Sign In'}</span>
               </button>
             )}
 

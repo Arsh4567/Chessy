@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Chess, Square, PieceSymbol, Color } from 'chess.js';
+import { Chess, Square } from 'chess.js';
 import { PieceColor, PieceType, MoveClassification } from '../../types/chess';
 import { PieceIcon } from './PieceIcon';
-import { MOVE_QUALITY_SIGNS } from '../../utils/moveClassification';
 import { MoveMark } from './MoveMark';
 import { PromotionModal } from './PromotionModal';
 import { sound } from '../../utils/sound';
@@ -27,6 +26,175 @@ interface ChessBoardProps {
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const;
 const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'] as const;
+
+interface ChessSquareProps {
+  square: Square;
+  rankLabel?: string;
+  fileLabel?: string;
+  isLightSquare: boolean;
+  piece: { type: PieceType; color: PieceColor } | null;
+  isSelected: boolean;
+  isPremoveSelected: boolean;
+  isPremoveFrom: boolean;
+  isPremoveTo: boolean;
+  isLastMoveFrom: boolean;
+  isLastMoveTo: boolean;
+  isCheckSquare: boolean;
+  isLegalTarget: boolean;
+  isCaptureTarget: boolean;
+  isBestMoveSource: boolean;
+  isBestMoveTarget: boolean;
+  isDraggable: boolean;
+  slideOffset: { dx: number; dy: number; key: string } | null;
+  moveQualityClassification?: MoveClassification;
+  onClick: (square: Square) => void;
+  onDragStart: (e: React.DragEvent, square: Square) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent, square: Square) => void;
+}
+
+/**
+ * Highly-Optimized Memoized Chess Square Component
+ * Prevents re-rendering untouched squares during selection, move calculation, and dragging.
+ */
+const ChessSquare: React.FC<ChessSquareProps> = React.memo(({
+  square,
+  rankLabel,
+  fileLabel,
+  isLightSquare,
+  piece,
+  isSelected,
+  isPremoveSelected,
+  isPremoveFrom,
+  isPremoveTo,
+  isLastMoveFrom,
+  isLastMoveTo,
+  isCheckSquare,
+  isLegalTarget,
+  isCaptureTarget,
+  isBestMoveSource,
+  isBestMoveTarget,
+  isDraggable,
+  slideOffset,
+  moveQualityClassification,
+  onClick,
+  onDragStart,
+  onDragOver,
+  onDrop,
+}) => {
+  return (
+    <div
+      onClick={() => onClick(square)}
+      onDragOver={onDragOver}
+      onDrop={(e) => onDrop(e, square)}
+      className={`relative flex items-center justify-center cursor-pointer select-none transition-colors duration-75 ${
+        isLightSquare ? 'bg-[var(--sq-light)]' : 'bg-[var(--sq-dark)]'
+      }`}
+      style={{
+        backgroundColor: isCheckSquare
+          ? 'rgba(239, 68, 68, 0.9)'
+          : isPremoveFrom || isPremoveTo
+          ? 'rgba(245, 158, 11, 0.35)'
+          : isPremoveSelected
+          ? 'rgba(245, 158, 11, 0.45)'
+          : isSelected
+          ? 'var(--sq-highlight)'
+          : isLastMoveFrom || isLastMoveTo
+          ? 'var(--sq-move)'
+          : undefined,
+      }}
+    >
+      {/* File & Rank Coordinates */}
+      {rankLabel && (
+        <span
+          className={`absolute top-0.5 left-1 text-[9px] sm:text-[10px] font-mono font-bold select-none pointer-events-none ${
+            isLightSquare ? 'text-[var(--sq-dark)] opacity-70' : 'text-[var(--sq-light)] opacity-70'
+          }`}
+        >
+          {rankLabel}
+        </span>
+      )}
+      {fileLabel && (
+        <span
+          className={`absolute bottom-0.5 right-1 text-[9px] sm:text-[10px] font-mono font-bold select-none pointer-events-none ${
+            isLightSquare ? 'text-[var(--sq-dark)] opacity-70' : 'text-[var(--sq-light)] opacity-70'
+          }`}
+        >
+          {fileLabel}
+        </span>
+      )}
+
+      {/* Best Move Engine Hint Overlays */}
+      {isBestMoveSource && (
+        <div className="absolute inset-1 rounded-full border-2 border-cyan-400 pointer-events-none z-10" />
+      )}
+      {isBestMoveTarget && (
+        <div className="absolute inset-1.5 rounded-full border-2 border-dashed border-cyan-400 pointer-events-none z-10" />
+      )}
+
+      {/* Premove Visual Cue */}
+      {isPremoveFrom && (
+        <div className="absolute inset-0 ring-2 ring-inset ring-amber-400/90 pointer-events-none z-20" />
+      )}
+      {isPremoveTo && (
+        <div className="absolute inset-0 ring-2 ring-inset ring-amber-400/90 flex items-center justify-center pointer-events-none z-20">
+          <span className="w-3.5 h-3.5 rounded-full bg-amber-400 shadow-sm" />
+        </div>
+      )}
+      {isPremoveSelected && (
+        <div className="absolute inset-0 ring-2 ring-inset ring-amber-400 bg-amber-500/30 pointer-events-none z-20" />
+      )}
+
+      {/* Legal Move Destination Dots */}
+      {isLegalTarget && !piece && (
+        <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 bg-black/30 rounded-full pointer-events-none z-10" />
+      )}
+
+      {/* Legal Move Capture Ring */}
+      {isLegalTarget && piece && isCaptureTarget && (
+        <div className="absolute inset-1 rounded-full border-4 border-black/30 pointer-events-none z-10" />
+      )}
+
+      {/* Chess Piece */}
+      {piece && (
+        <div
+          draggable={isDraggable}
+          onDragStart={(e) => onDragStart(e, square)}
+          style={
+            slideOffset
+              ? ({
+                  '--slide-x': `${slideOffset.dx}%`,
+                  '--slide-y': `${slideOffset.dy}%`,
+                } as React.CSSProperties)
+              : undefined
+          }
+          className={`w-[88%] h-[88%] flex items-center justify-center select-none ${
+            slideOffset
+              ? 'animate-piece-slide z-40'
+              : 'z-20'
+          } ${
+            isDraggable
+              ? 'cursor-grab active:cursor-grabbing hover:scale-105'
+              : 'cursor-default'
+          }`}
+        >
+          <PieceIcon
+            type={piece.type}
+            color={piece.color}
+            className="w-full h-full pointer-events-none"
+          />
+        </div>
+      )}
+
+      {/* Move Quality Badge on Destination Square */}
+      {isLastMoveTo && moveQualityClassification && (
+        <div className="absolute -top-1.5 -right-1.5 z-40 select-none pointer-events-none">
+          <MoveMark classification={moveQualityClassification} size={28} showGlow />
+        </div>
+      )}
+    </div>
+  );
+});
 
 export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
   chess,
@@ -86,7 +254,6 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
           promotion: promo,
         });
       } else {
-        // Illegal premove in the resulting board state: cancel silently
         sound.playIllegal();
       }
       setPremove(null);
@@ -94,7 +261,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
     }
   }, [currentFen, isMyTurn, disabled, premove, chess, onMove]);
 
-  // Instantly cancel any active slide animations when board is flipped
+  // Instantly cancel active slide animations when board is flipped
   useEffect(() => {
     if (prevFlippedRef.current !== isFlipped) {
       prevFlippedRef.current = isFlipped;
@@ -102,7 +269,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
     }
   }, [isFlipped]);
 
-  // Trigger smooth sliding animation strictly for verified legal, completed moves
+  // Trigger smooth sliding animation strictly for verified legal completed moves
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -130,7 +297,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
       setSlidingMoveKey(moveId);
       const timer = setTimeout(() => {
         setSlidingMoveKey((curr) => (curr === moveId ? null : curr));
-      }, 205);
+      }, 190);
       return () => clearTimeout(timer);
     } else {
       setSlidingMoveKey(null);
@@ -140,7 +307,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
   const displayFiles = useMemo(() => isFlipped ? [...FILES].reverse() : [...FILES], [isFlipped]);
   const displayRanks = useMemo(() => isFlipped ? [...RANKS].reverse() : [...RANKS], [isFlipped]);
 
-  // O(1) Fast Square Piece Matrix representation
+  // Fast Square Piece Matrix representation
   const boardMatrix = useMemo(() => chess.board(), [currentFen]);
 
   // Fast O(1) Legal Targets Lookup Map
@@ -169,7 +336,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
     return null;
   }, [isCheck, boardMatrix, turn]);
 
-  // Calculate relative grid offset for the sliding piece respecting current board orientation
+  // Calculate relative grid offset for the sliding piece
   const getSlideOffset = useCallback((square: Square) => {
     if (!lastMove || !slidingMoveKey) return null;
 
@@ -229,8 +396,8 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
     if (!square || square.length < 2) return { x: 400, y: 400, col: 3, row: 3 };
     const fileChar = square[0].toLowerCase();
     const rankNum = parseInt(square[1], 10);
-    const fileIdx = fileChar.charCodeAt(0) - 97; // 0 to 7
-    const rankIdx = rankNum - 1; // 0 to 7
+    const fileIdx = fileChar.charCodeAt(0) - 97;
+    const rankIdx = rankNum - 1;
 
     const col = isFlipped ? 7 - fileIdx : fileIdx;
     const row = isFlipped ? rankIdx : 7 - rankIdx;
@@ -256,7 +423,6 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
       (Math.abs(colDiff) === 2 && Math.abs(rowDiff) === 1);
 
     if (isKnightMove) {
-      // Authentic L-shaped chess path
       let cornerX = from.x;
       let cornerY = to.y;
       if (Math.abs(colDiff) === 2 && Math.abs(rowDiff) === 1) {
@@ -276,12 +442,10 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
 
       if (premoveSelectedSquare) {
         if (premoveSelectedSquare === square) {
-          // Deselect
           setPremoveSelectedSquare(null);
           return;
         }
 
-        // Set premove from selected square to this target
         const movingPiece = chess.get(premoveSelectedSquare);
         const isPromotion =
           movingPiece?.type === 'p' &&
@@ -298,18 +462,16 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
       }
 
       if (piece && piece.color === effectivePlayerColor) {
-        // Select piece to premove
         setPremoveSelectedSquare(square);
-        setPremove(null); // Clear previous premove
+        setPremove(null);
       } else {
-        // Cancel any pending premove
         setPremove(null);
         setPremoveSelectedSquare(null);
       }
       return;
     }
 
-    // 2. Normal move flow (when it is our turn):
+    // 2. Normal move flow:
     if (disabled) return;
 
     const piece = chess.get(square);
@@ -388,7 +550,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
     setLegalTargets([]);
   }, [pendingPromotion, onMove]);
 
-  // Drag and Drop handlers with zero lag and full premove support
+  // Drag and Drop handlers
   const handleDragStart = useCallback((e: React.DragEvent, square: Square) => {
     const piece = chess.get(square);
     if (!piece) {
@@ -495,11 +657,11 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
   return (
     <div 
       onContextMenu={handleContextMenu}
-      className={`relative w-full max-w-[min(94vw,470px,68vh)] aspect-square select-none board-theme-${boardTheme} rounded-2xl shadow-2xl p-1.5 sm:p-2 bg-slate-900 border border-slate-800 transition-all duration-300 touch-manipulation`}
+      className={`relative w-full max-w-[min(94vw,470px,68vh)] aspect-square select-none board-theme-${boardTheme} rounded-2xl shadow-xl p-1.5 sm:p-2 bg-slate-900 border border-slate-800 transition-all duration-300 touch-manipulation`}
       role="region"
       aria-label="Interactive Chess Board"
     >
-      <div className="relative w-full h-full grid grid-cols-8 grid-rows-8 rounded-xl overflow-hidden border border-black/40 shadow-inner will-change-transform">
+      <div className="relative w-full h-full grid grid-cols-8 grid-rows-8 rounded-xl overflow-hidden border border-black/40 shadow-inner">
         {displayRanks.map((rank, rIdx) => {
           const rankNum = parseInt(rank, 10);
           const origRow = 8 - rankNum;
@@ -508,7 +670,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
             const square = `${file}${rank}` as Square;
             const isLightSquare = (rIdx + fIdx) % 2 === 0;
             const origCol = file.charCodeAt(0) - 97;
-            const piece = boardMatrix[origRow]?.[origCol] || null;
+            const piece = (boardMatrix[origRow]?.[origCol] as { type: PieceType; color: PieceColor } | null) || null;
 
             const isSelected = selectedSquare === square;
             const isPremoveSelected = premoveSelectedSquare === square;
@@ -521,128 +683,41 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
 
             const targetInfo = legalTargetsMap.get(square);
             const isLegalTarget = showLegalMoves && isMyTurn && !!targetInfo;
-            const isCaptureTarget = targetInfo?.isCapture;
+            const isCaptureTarget = Boolean(targetInfo?.isCapture);
 
             const isBestMoveSource = bestMoveHint?.from === square;
             const isBestMoveTarget = bestMoveHint?.to === square;
 
+            const slideOffset = getSlideOffset(square);
+            const isDraggable = (isMyTurn && piece?.color === turn) || (!isMyTurn && allowPremove && piece?.color === effectivePlayerColor);
+
             return (
-              <div
+              <ChessSquare
                 key={square}
-                onClick={() => handleSquareClick(square)}
+                square={square}
+                rankLabel={showCoordinates && fIdx === 0 ? rank : undefined}
+                fileLabel={showCoordinates && rIdx === 7 ? file : undefined}
+                isLightSquare={isLightSquare}
+                piece={piece}
+                isSelected={isSelected}
+                isPremoveSelected={isPremoveSelected}
+                isPremoveFrom={isPremoveFrom}
+                isPremoveTo={isPremoveTo}
+                isLastMoveFrom={isLastMoveFrom}
+                isLastMoveTo={isLastMoveTo}
+                isCheckSquare={isCheckSquare}
+                isLegalTarget={isLegalTarget}
+                isCaptureTarget={isCaptureTarget}
+                isBestMoveSource={isBestMoveSource}
+                isBestMoveTarget={isBestMoveTarget}
+                isDraggable={isDraggable}
+                slideOffset={slideOffset}
+                moveQualityClassification={isLastMoveTo ? moveQualityClassification : undefined}
+                onClick={handleSquareClick}
+                onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, square)}
-                className={`relative flex items-center justify-center cursor-pointer transition-colors duration-100 will-change-transform ${
-                  isLightSquare ? 'bg-[var(--sq-light)]' : 'bg-[var(--sq-dark)]'
-                } ${isLastMoveTo && slidingMoveKey ? 'animate-capture-flash' : ''}`}
-                style={{
-                  backgroundColor: isCheckSquare
-                    ? 'rgba(239, 68, 68, 0.9)'
-                    : isPremoveFrom || isPremoveTo
-                    ? 'rgba(245, 158, 11, 0.35)'
-                    : isPremoveSelected
-                    ? 'rgba(245, 158, 11, 0.45)'
-                    : isSelected
-                    ? 'var(--sq-highlight)'
-                    : isLastMoveFrom || isLastMoveTo
-                    ? 'var(--sq-move)'
-                    : undefined,
-                }}
-              >
-                {/* Coordinates */}
-                {showCoordinates && fIdx === 0 && (
-                  <span
-                    className={`absolute top-0.5 left-1 text-[9px] sm:text-[10px] font-mono font-bold select-none pointer-events-none ${
-                      isLightSquare ? 'text-[var(--sq-dark)] opacity-70' : 'text-[var(--sq-light)] opacity-70'
-                    }`}
-                  >
-                    {rank}
-                  </span>
-                )}
-                {showCoordinates && rIdx === 7 && (
-                  <span
-                    className={`absolute bottom-0.5 right-1 text-[9px] sm:text-[10px] font-mono font-bold select-none pointer-events-none ${
-                      isLightSquare ? 'text-[var(--sq-dark)] opacity-70' : 'text-[var(--sq-light)] opacity-70'
-                    }`}
-                  >
-                    {file}
-                  </span>
-                )}
-
-                {/* Best Move Engine Hint (if active) */}
-                {isBestMoveSource && (
-                  <div className="absolute inset-1 rounded-full border-2 border-cyan-400 animate-pulse pointer-events-none z-10" />
-                )}
-                {isBestMoveTarget && (
-                  <div className="absolute inset-1.5 rounded-full border-2 border-dashed border-cyan-400 animate-spin pointer-events-none z-10" />
-                )}
-
-                {/* Premove Visual Cue */}
-                {isPremoveFrom && (
-                  <div className="absolute inset-0 ring-2 ring-inset ring-amber-400/90 pointer-events-none z-20" />
-                )}
-                {isPremoveTo && (
-                  <div className="absolute inset-0 ring-2 ring-inset ring-amber-400/90 flex items-center justify-center pointer-events-none z-20">
-                    <span className="w-3.5 h-3.5 rounded-full bg-amber-400 shadow-md shadow-amber-500/50" />
-                  </div>
-                )}
-                {isPremoveSelected && (
-                  <div className="absolute inset-0 ring-2 ring-inset ring-amber-400 bg-amber-500/30 pointer-events-none z-20" />
-                )}
-
-                {/* Legal Move Indicators */}
-                {isLegalTarget && !piece && (
-                  <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 bg-black/30 hover:bg-black/45 rounded-full pointer-events-none z-10 transition-transform scale-100 hover:scale-125" />
-                )}
-
-                {isLegalTarget && piece && isCaptureTarget && (
-                  <div className="absolute inset-1 rounded-full border-4 border-black/30 hover:border-black/50 pointer-events-none z-10" />
-                )}
-
-                {/* Piece with smooth hover, drag, and tactile sliding animation */}
-                {piece && (() => {
-                  const slideOffset = getSlideOffset(square);
-                  const isDraggable = (isMyTurn && piece.color === turn) || (!isMyTurn && allowPremove && piece.color === effectivePlayerColor);
-
-                  return (
-                    <div
-                      key={slideOffset ? slideOffset.key : `piece-${square}-${piece.color}${piece.type}`}
-                      draggable={isDraggable}
-                      onDragStart={(e) => handleDragStart(e, square)}
-                      style={
-                        slideOffset
-                          ? ({
-                              '--slide-x': `${slideOffset.dx}%`,
-                              '--slide-y': `${slideOffset.dy}%`,
-                            } as React.CSSProperties)
-                          : undefined
-                      }
-                      className={`w-[88%] h-[88%] flex items-center justify-center select-none ${
-                        slideOffset
-                          ? 'animate-piece-slide z-40'
-                          : 'transition-transform duration-100 active:scale-110 z-20'
-                      } ${
-                        isDraggable
-                          ? 'cursor-grab active:cursor-grabbing hover:scale-105'
-                          : 'cursor-default'
-                      }`}
-                    >
-                      <PieceIcon
-                        type={piece.type as PieceType}
-                        color={piece.color as PieceColor}
-                        className="w-full h-full drop-shadow-md pointer-events-none"
-                      />
-                    </div>
-                  );
-                })()}
-
-                {/* Move Quality Badge on Destination Square */}
-                {isLastMoveTo && moveQualityClassification && (
-                  <div className="absolute -top-1.5 -right-1.5 z-40 animate-in zoom-in-75 duration-150 select-none pointer-events-none drop-shadow-md">
-                    <MoveMark classification={moveQualityClassification} size={28} showGlow />
-                  </div>
-                )}
-              </div>
+                onDrop={handleDrop}
+              />
             );
           });
         })}
@@ -654,9 +729,6 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
           aria-hidden="true"
         >
           <defs>
-            <filter id="best-move-glow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000000" floodOpacity="0.75" />
-            </filter>
             <marker
               id="arrowhead-best"
               viewBox="0 0 10 10"
@@ -694,39 +766,34 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
 
           {/* Engine Best Move Arrow */}
           {showBestMoveArrow && bestMoveHint && bestMoveHint.from && bestMoveHint.to && bestMoveHint.from !== bestMoveHint.to && (
-            <g className="animate-in fade-in duration-200">
-              {/* Subtle dark underlay outline for high contrast on any board theme */}
+            <g>
               <path
                 d={getArrowPath(bestMoveHint.from, bestMoveHint.to)}
                 stroke="rgba(0, 0, 0, 0.45)"
-                strokeWidth="20"
+                strokeWidth="18"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 fill="none"
               />
-              {/* Main Arrow Body */}
               <path
                 d={getArrowPath(bestMoveHint.from, bestMoveHint.to)}
                 stroke="#10b981"
-                strokeWidth="14"
+                strokeWidth="12"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 fill="none"
                 markerEnd="url(#arrowhead-best)"
                 opacity="0.9"
-                filter="url(#best-move-glow)"
               />
-              {/* Origin Circle */}
               {(() => {
                 const origin = getSquareCoordinates(bestMoveHint.from);
                 return (
                   <circle
                     cx={origin.x}
                     cy={origin.y}
-                    r="15"
+                    r="14"
                     fill="#10b981"
                     opacity="0.85"
-                    filter="url(#best-move-glow)"
                   />
                 );
               })()}
@@ -739,7 +806,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
               <path
                 d={getArrowPath(arr.from, arr.to)}
                 stroke="rgba(0, 0, 0, 0.35)"
-                strokeWidth="18"
+                strokeWidth="16"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 fill="none"
@@ -747,13 +814,12 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
               <path
                 d={getArrowPath(arr.from, arr.to)}
                 stroke={arr.color || '#06b6d4'}
-                strokeWidth="13"
+                strokeWidth="11"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 fill="none"
                 markerEnd={arr.color === '#f59e0b' ? 'url(#arrowhead-amber)' : 'url(#arrowhead-cyan)'}
                 opacity="0.88"
-                filter="url(#best-move-glow)"
               />
             </g>
           ))}
@@ -762,7 +828,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
 
       {/* Floating Premove Notification Badge */}
       {premove && (
-        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-50 px-3 py-1 bg-amber-500/95 text-slate-950 text-[11px] font-bold rounded-full shadow-lg flex items-center gap-1.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-50 px-3 py-1 bg-amber-500 text-slate-950 text-[11px] font-bold rounded-full shadow-lg flex items-center gap-1.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
           <span>⚡ Premove: {premove.from}→{premove.to}</span>
           <button
             onClick={(e) => {

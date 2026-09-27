@@ -78,6 +78,10 @@ export const LearnView: React.FC<LearnViewProps> = ({
         if (res) setStockfishEval(res);
       })
       .finally(() => setIsEvaluating(false));
+
+    return () => {
+      stockfish.stopActiveSearch().catch(() => {});
+    };
   }, [chess.fen(), activeLearnTab]);
 
   const handleSelectOpening = (op: OpeningInfo) => {

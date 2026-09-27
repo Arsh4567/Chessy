@@ -298,6 +298,7 @@ export async function loadMatchHistoryFromFirestore(
 
 /**
  * Initializes or updates user profile in Firestore
+ * Preserves the original createdAt timestamp and validates the authenticated user.
  */
 export async function syncUserProfileToFirestore(user: {
   uid: string;
@@ -305,34 +306,61 @@ export async function syncUserProfileToFirestore(user: {
   photoURL: string | null;
   email: string | null;
 }): Promise<void> {
-  const publicPath = `users/${user.uid}/public/profile`;
-  const privatePath = `users/${user.uid}/private/account`;
-  try {
-    await setDoc(
-      doc(db, 'users', user.uid, 'public', 'profile'),
-      {
-        userId: user.uid,
-        displayName: user.displayName || 'Grandmaster Player',
-        photoURL: user.photoURL || '',
-        updatedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+  if (!user.uid || !auth.currentUser || auth.currentUser.uid !== user.uid) {
+    return;
+  }
 
-    if (user.email) {
+  const publicDocRef = doc(db, 'users', user.uid, 'public', 'profile');
+  const privateDocRef = doc(db, 'users', user.uid, 'private', 'account');
+
+  try {
+    const publicSnap = await getDoc(publicDocRef);
+    const now = new Date().toISOString();
+
+    if (publicSnap.exists()) {
+      // Existing profile: update displayName, photoURL, and updatedAt without altering createdAt
       await setDoc(
-        doc(db, 'users', user.uid, 'private', 'account'),
+        publicDocRef,
         {
-          email: user.email,
-          updatedAt: new Date().toISOString(),
-          createdAt: new Date().toISOString(),
+          userId: user.uid,
+          displayName: user.displayName || publicSnap.data()?.displayName || 'Grandmaster Player',
+          photoURL: user.photoURL || publicSnap.data()?.photoURL || '',
+          updatedAt: now,
         },
         { merge: true }
       );
+    } else {
+      // New profile: set initial createdAt
+      await setDoc(publicDocRef, {
+        userId: user.uid,
+        displayName: user.displayName || 'Grandmaster Player',
+        photoURL: user.photoURL || '',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    if (user.email) {
+      const privateSnap = await getDoc(privateDocRef);
+      if (privateSnap.exists()) {
+        await setDoc(
+          privateDocRef,
+          {
+            email: user.email,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+      } else {
+        await setDoc(privateDocRef, {
+          email: user.email,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
     }
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, publicPath);
+    handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/public/profile`);
   }
 }
 

@@ -117,6 +117,12 @@ export function setActiveFirebaseUserId(uid: string) {
   currentActiveUserId = uid;
 }
 
+export function clearUserSessionData() {
+  inMemoryStats = { ...DEFAULT_STATS };
+  inMemoryPrefs = { ...DEFAULT_PREFERENCES };
+  currentActiveUserId = null;
+}
+
 export function loadPreferences(): UserPreferences {
   return inMemoryPrefs;
 }
