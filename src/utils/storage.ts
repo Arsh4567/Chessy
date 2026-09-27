@@ -2,10 +2,12 @@
  * Local & Firestore Session Storage & Atomic State Manager
  * 
  * Features:
- * - Atomic account-switching and session generation tracking.
+ * - Safe factory functions (createDefaultStats, createDefaultPreferences) preventing shared array references.
+ * - Atomic account-switching and monotonic session generation tracking.
  * - Zero cross-account data leakage.
  * - Invalidation of stale in-flight Firestore promises after logout/login.
  * - Non-stale getActiveFirebaseUserId() bound strictly to auth.currentUser.
+ * - True reset stats for current authenticated account and in-memory state.
  */
 
 import {
@@ -15,6 +17,7 @@ import {
   loadUserPreferencesFromFirestore,
   recordMultiplayerGameTransaction,
   loadMatchHistoryFromFirestore,
+  resetUserStatsInFirestore,
 } from '../firebase/firestoreService';
 import { INITIAL_RATING, calculateEloUpdate } from './eloRating';
 import { auth } from '../firebase/config';
@@ -78,41 +81,53 @@ export interface UserPreferences {
   engineThinkingSeconds?: number;
 }
 
-export const DEFAULT_PREFERENCES: UserPreferences = {
-  boardTheme: 'emerald',
-  soundEnabled: true,
-  showCoordinates: true,
-  showLegalMoves: true,
-  autoQueen: false,
-  defaultTimeControl: '5-0',
-  stockfishLevel: 10,
-  engineThinkingSeconds: 2,
-};
+/**
+ * Safe Factory for User Preferences
+ */
+export function createDefaultPreferences(): UserPreferences {
+  return {
+    boardTheme: 'emerald',
+    soundEnabled: true,
+    showCoordinates: true,
+    showLegalMoves: true,
+    autoQueen: false,
+    defaultTimeControl: '5-0',
+    stockfishLevel: 10,
+    engineThinkingSeconds: 2,
+  };
+}
 
-export const DEFAULT_STATS: UserStats = {
-  gamesPlayed: 0,
-  wins: 0,
-  losses: 0,
-  draws: 0,
-  puzzleRating: 1500,
-  puzzlesSolved: 0,
-  history: [],
+/**
+ * Safe Factory for User Stats with completely independent nested arrays
+ */
+export function createDefaultStats(): UserStats {
+  return {
+    gamesPlayed: 0,
+    wins: 0,
+    losses: 0,
+    draws: 0,
+    puzzleRating: 1500,
+    puzzlesSolved: 0,
+    history: [],
+    multiplayerRating: INITIAL_RATING,
+    multiplayerGamesPlayed: 0,
+    multiplayerWins: 0,
+    multiplayerLosses: 0,
+    multiplayerDraws: 0,
+    multiplayerPeakRating: INITIAL_RATING,
+    multiplayerHistory: [],
+  };
+}
 
-  // Multiplayer Elo stats: starts at 800 Elo
-  multiplayerRating: INITIAL_RATING,
-  multiplayerGamesPlayed: 0,
-  multiplayerWins: 0,
-  multiplayerLosses: 0,
-  multiplayerDraws: 0,
-  multiplayerPeakRating: INITIAL_RATING,
-  multiplayerHistory: [],
-};
+// Backward compatibility constants (frozen copies)
+export const DEFAULT_PREFERENCES: Readonly<UserPreferences> = Object.freeze(createDefaultPreferences());
+export const DEFAULT_STATS: Readonly<UserStats> = Object.freeze(createDefaultStats());
 
 // Monotonic Session Generation Counter for atomic account isolation
 let currentSessionGeneration = 0;
 let currentActiveUserId: string | null = null;
-let inMemoryStats: UserStats = { ...DEFAULT_STATS };
-let inMemoryPrefs: UserPreferences = { ...DEFAULT_PREFERENCES };
+let inMemoryStats: UserStats = createDefaultStats();
+let inMemoryPrefs: UserPreferences = createDefaultPreferences();
 
 /**
  * Returns current authenticated Firebase user UID.
@@ -142,8 +157,8 @@ export function setActiveFirebaseUserId(uid: string | null) {
 export function clearUserSessionData() {
   currentSessionGeneration++;
   currentActiveUserId = null;
-  inMemoryStats = { ...DEFAULT_STATS };
-  inMemoryPrefs = { ...DEFAULT_PREFERENCES };
+  inMemoryStats = createDefaultStats();
+  inMemoryPrefs = createDefaultPreferences();
 }
 
 /**
@@ -152,13 +167,13 @@ export function clearUserSessionData() {
 export function beginUserSession(userId: string): number {
   currentSessionGeneration++;
   currentActiveUserId = userId;
-  inMemoryStats = { ...DEFAULT_STATS };
-  inMemoryPrefs = { ...DEFAULT_PREFERENCES };
+  inMemoryStats = createDefaultStats();
+  inMemoryPrefs = createDefaultPreferences();
   return currentSessionGeneration;
 }
 
 export function loadPreferences(): UserPreferences {
-  return inMemoryPrefs;
+  return { ...inMemoryPrefs };
 }
 
 export function savePreferences(prefs: UserPreferences) {
@@ -172,7 +187,33 @@ export function savePreferences(prefs: UserPreferences) {
 }
 
 export function loadUserStats(): UserStats {
-  return inMemoryStats;
+  return {
+    ...inMemoryStats,
+    history: [...inMemoryStats.history],
+    multiplayerHistory: [...inMemoryStats.multiplayerHistory],
+  };
+}
+
+/**
+ * Resets user stats both in Firestore (if logged in) and in-memory atomically
+ */
+export async function resetUserStats(userId?: string): Promise<UserStats> {
+  const targetUid = userId || getActiveFirebaseUserId();
+  inMemoryStats = createDefaultStats();
+
+  if (targetUid && auth.currentUser && auth.currentUser.uid === targetUid) {
+    try {
+      await resetUserStatsInFirestore(targetUid);
+    } catch (err) {
+      console.warn('Reset user stats in Firestore warning:', err);
+    }
+  }
+
+  return {
+    ...inMemoryStats,
+    history: [],
+    multiplayerHistory: [],
+  };
 }
 
 /**
@@ -184,7 +225,7 @@ export async function syncUserDataFromFirestore(
 ): Promise<{ stats: UserStats; prefs: UserPreferences }> {
   if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) {
     clearUserSessionData();
-    return { stats: { ...DEFAULT_STATS }, prefs: { ...DEFAULT_PREFERENCES } };
+    return { stats: createDefaultStats(), prefs: createDefaultPreferences() };
   }
 
   const sessionGen = currentSessionGeneration;
@@ -202,38 +243,46 @@ export async function syncUserDataFromFirestore(
       !auth.currentUser ||
       auth.currentUser.uid !== userId
     ) {
-      return { stats: inMemoryStats, prefs: inMemoryPrefs };
+      return {
+        stats: { ...inMemoryStats, history: [...inMemoryStats.history], multiplayerHistory: [...inMemoryStats.multiplayerHistory] },
+        prefs: { ...inMemoryPrefs },
+      };
     }
 
     if (remoteStats) {
       inMemoryStats = {
-        ...DEFAULT_STATS,
+        ...createDefaultStats(),
         ...remoteStats,
-        multiplayerHistory:
-          remoteMatches && remoteMatches.length > 0
-            ? remoteMatches
-            : remoteStats.multiplayerHistory || [],
+        history: [],
+        multiplayerHistory: Array.isArray(remoteMatches) ? [...remoteMatches] : [],
       };
     } else {
-      // First time user: save clean initial stats to Firestore
-      inMemoryStats = { ...DEFAULT_STATS };
+      // First time user: initialize with fresh defaults
+      inMemoryStats = createDefaultStats();
       await saveUserStatsToFirestore(userId, inMemoryStats);
     }
 
     if (remotePrefs) {
       inMemoryPrefs = {
-        ...DEFAULT_PREFERENCES,
+        ...createDefaultPreferences(),
         ...remotePrefs,
       };
     } else {
-      inMemoryPrefs = { ...DEFAULT_PREFERENCES };
+      inMemoryPrefs = createDefaultPreferences();
       await saveUserPreferencesToFirestore(userId, inMemoryPrefs);
     }
   } catch (error) {
     console.warn('Firestore user sync notice:', error);
   }
 
-  return { stats: inMemoryStats, prefs: inMemoryPrefs };
+  return {
+    stats: {
+      ...inMemoryStats,
+      history: [...inMemoryStats.history],
+      multiplayerHistory: [...inMemoryStats.multiplayerHistory],
+    },
+    prefs: { ...inMemoryPrefs },
+  };
 }
 
 export function recordGameResult(
@@ -273,7 +322,11 @@ export function recordGameResult(
     });
   }
 
-  return { ...inMemoryStats };
+  return {
+    ...inMemoryStats,
+    history: [...inMemoryStats.history],
+    multiplayerHistory: [...inMemoryStats.multiplayerHistory],
+  };
 }
 
 export function recordPuzzleSolved(ratingDelta: number): UserStats {
@@ -287,15 +340,15 @@ export function recordPuzzleSolved(ratingDelta: number): UserStats {
     });
   }
 
-  return { ...inMemoryStats };
+  return {
+    ...inMemoryStats,
+    history: [...inMemoryStats.history],
+    multiplayerHistory: [...inMemoryStats.multiplayerHistory],
+  };
 }
 
 /**
- * Records a completed multiplayer game and applies the advance Elo rating system:
- * - Starts at 800 Elo
- * - First 7 matches (1..7): drastic ±100 Elo volatility (placement phase)
- * - Established matches (8+): stable ±7 to 8 Elo changes (0 for draw)
- * - Persists atomically to Firebase Firestore!
+ * Records a completed multiplayer game and applies the advance Elo rating system
  */
 export function recordMultiplayerGameResult(params: {
   matchId?: string;
@@ -389,7 +442,11 @@ export function recordMultiplayerGameResult(params: {
   }
 
   return {
-    stats: { ...inMemoryStats },
+    stats: {
+      ...inMemoryStats,
+      history: [...inMemoryStats.history],
+      multiplayerHistory: [...inMemoryStats.multiplayerHistory],
+    },
     oldRating: currentRating,
     newRating,
     ratingDelta,

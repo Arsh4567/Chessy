@@ -194,7 +194,7 @@
     "users": {
       "description": "Root user directory containing profiles, private accounts, and stats",
       "subcollections": {
-        "profile": { "description": "Public profile of user" },
+        "public": { "description": "Public profile of user" },
         "private": { "description": "Private sensitive info of user" },
         "stats": { "description": "Current stats and rating history" },
         "preferences": { "description": "User preferences" },

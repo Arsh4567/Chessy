@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper functions
+    // Core Helper Functions
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -11,71 +11,91 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Public Profiles
-    match /users/{userId}/profile/{docId} {
-      allow read: if true;
-      allow write: if isOwner(userId);
-    }
-
+    // 1. Consolidated Public User Profile (Read: Public, Write: Owner only)
     match /users/{userId}/public/{docId} {
       allow read: if true;
-      allow write: if isOwner(userId);
+      allow write: if isOwner(userId) &&
+        (request.resource == null || request.resource.data.userId == request.auth.uid);
     }
 
-    // Private User Accounts
+    // 2. Private User Account Data (Read/Write: Owner only)
     match /users/{userId}/private/{docId} {
       allow read, write: if isOwner(userId);
     }
 
-    // User Stats & Elo Ratings
+    // 3. User Stats, Tactical Elo, and Personal Records (Read/Write: Owner only)
     match /users/{userId}/stats/{docId} {
-      allow read: if true;
-      allow write: if isOwner(userId);
+      allow read, write: if isOwner(userId);
     }
 
-    // User Preferences
+    // 4. User Preferences & Settings (Read/Write: Owner only)
     match /users/{userId}/preferences/{docId} {
       allow read, write: if isOwner(userId);
     }
 
-    // Multiplayer Match Records
+    // 5. Complete Multiplayer Match Records & PGN History (Read/Write: Owner only)
     match /users/{userId}/matches/{matchId} {
-      allow read: if true;
-      allow write: if isOwner(userId);
+      allow read, write: if isOwner(userId);
     }
 
-    // Friends List
+    // 6. Friends List (Read/Write: Owner only)
     match /users/{userId}/friends/{friendId} {
       allow read, write: if isOwner(userId);
     }
 
-    // Public Real-time Leaderboard (Authoritative: read-only for clients, managed authoritatively by backend server)
+    // 7. Public Real-time Leaderboard (Read: Public, Write: Authoritative Backend Server only)
     match /public_leaderboard/{userId} {
       allow read: if true;
       allow write: if false;
     }
 
-    // Friend Requests
+    // 8. Friend Requests with Strict Role-based Transitions
     match /friend_requests/{requestId} {
       allow read: if isAuthenticated() && (
         resource.data.fromUserId == request.auth.uid || 
         resource.data.toUserId == request.auth.uid
       );
+
       allow create: if isAuthenticated() && 
-        request.resource.data.fromUserId == request.auth.uid;
+        request.resource.data.fromUserId == request.auth.uid &&
+        request.resource.data.toUserId != request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.fromUserId is string &&
+        request.resource.data.toUserId is string;
+
       allow update: if isAuthenticated() && (
-        resource.data.fromUserId == request.auth.uid || 
-        resource.data.toUserId == request.auth.uid
+        // Recipient can accept or decline a pending request
+        (
+          resource.data.toUserId == request.auth.uid &&
+          resource.data.status == 'pending' &&
+          (request.resource.data.status == 'accepted' || request.resource.data.status == 'declined') &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        ) ||
+        // Sender can cancel a pending request
+        (
+          resource.data.fromUserId == request.auth.uid &&
+          resource.data.status == 'pending' &&
+          request.resource.data.status == 'cancelled' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        )
       );
+
       allow delete: if isAuthenticated() && (
         resource.data.fromUserId == request.auth.uid || 
         resource.data.toUserId == request.auth.uid
       );
     }
 
-    // Direct Messages (Subcollection of direct_chats)
+    // 9. Direct Chats & Messages (Restricted strictly to chat participants)
     match /direct_chats/{chatId} {
-      allow read, write: if isAuthenticated();
+      function isChatParticipant() {
+        return isAuthenticated() && (
+          chatId.matches('^' + request.auth.uid + '_chat_.*') ||
+          chatId.matches('^.*_chat_' + request.auth.uid + '$')
+        );
+      }
+
+      allow read, write: if isChatParticipant();
       
       match /messages/{messageId} {
         allow read: if isAuthenticated() && (
@@ -83,38 +103,62 @@ service cloud.firestore {
           resource.data.recipientId == request.auth.uid
         );
         allow create: if isAuthenticated() && 
-          request.resource.data.senderId == request.auth.uid;
-        allow update: if isAuthenticated() && (
-          resource.data.senderId == request.auth.uid ||
-          resource.data.recipientId == request.auth.uid
-        );
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.recipientId != request.auth.uid &&
+          (chatId == request.auth.uid + '_chat_' + request.resource.data.recipientId ||
+           chatId == request.resource.data.recipientId + '_chat_' + request.auth.uid);
+        allow update: if isAuthenticated() && 
+          resource.data.recipientId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
         allow delete: if isAuthenticated() && 
           resource.data.senderId == request.auth.uid;
       }
     }
 
-    // Game Challenges
+    // 10. Game Challenges with Validated State Transitions
     match /game_challenges/{challengeId} {
       allow read: if isAuthenticated() && (
         resource.data.challengerId == request.auth.uid ||
         resource.data.challengedId == request.auth.uid
       );
+
       allow create: if isAuthenticated() && 
-        request.resource.data.challengerId == request.auth.uid;
+        request.resource.data.challengerId == request.auth.uid &&
+        request.resource.data.challengedId != request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.roomId is string;
+
       allow update: if isAuthenticated() && (
-        resource.data.challengerId == request.auth.uid ||
-        resource.data.challengedId == request.auth.uid
+        // Challenged player can accept or decline a pending challenge
+        (
+          resource.data.challengedId == request.auth.uid &&
+          resource.data.status == 'pending' &&
+          (request.resource.data.status == 'accepted' || request.resource.data.status == 'declined') &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        ) ||
+        // Challenger can cancel a pending challenge
+        (
+          resource.data.challengerId == request.auth.uid &&
+          resource.data.status == 'pending' &&
+          request.resource.data.status == 'cancelled' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        )
       );
+
       allow delete: if isAuthenticated() && (
         resource.data.challengerId == request.auth.uid ||
         resource.data.challengedId == request.auth.uid
       );
     }
 
-    // User Presence & Online Status
+    // 11. User Presence & Online Activity (Minimum required info)
     match /user_presence/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isOwner(userId);
+      allow create, update: if isOwner(userId) &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.keys().hasOnly(['userId', 'displayName', 'status', 'currentRoomId', 'lastActive']) &&
+        (request.resource.data.status == 'online' || request.resource.data.status == 'in-game' || request.resource.data.status == 'offline');
+      allow delete: if isOwner(userId);
     }
   }
 }

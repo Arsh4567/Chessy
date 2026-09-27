@@ -40,11 +40,11 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
 
   useEffect(() => {
     const unsubscribe = subscribeToPublicLeaderboard(
-      (entries) => {
+      (entries: LeaderboardEntry[]) => {
         setLeaderboardList(entries);
         setIsLoadingLb(false);
       },
-      (_err) => {
+      (_err: any) => {
         setIsLoadingLb(false);
       }
     );

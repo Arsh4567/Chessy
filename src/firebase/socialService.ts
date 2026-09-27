@@ -300,7 +300,7 @@ export async function sendFriendRequest(
 }
 
 /**
- * Accepts a friend request and establishes bidirectional friendship
+ * Accepts a friend request and establishes friendship
  */
 export async function acceptFriendRequest(request: FriendRequest): Promise<void> {
   const current = auth.currentUser;
@@ -308,27 +308,19 @@ export async function acceptFriendRequest(request: FriendRequest): Promise<void>
     throw new Error('Unauthorized friend request acceptance');
   }
 
+  const now = new Date().toISOString();
+
   await setDoc(
     doc(db, 'friend_requests', request.id),
-    { status: 'accepted', updatedAt: new Date().toISOString() },
+    { status: 'accepted', updatedAt: now },
     { merge: true }
   );
-
-  const now = new Date().toISOString();
 
   await setDoc(doc(db, 'users', current.uid, 'friends', request.fromUserId), {
     friendId: request.fromUserId,
     friendDisplayName: request.fromDisplayName,
     friendPhotoURL: request.fromPhotoURL || '',
     friendRating: request.fromRating || 1200,
-    addedAt: now,
-  });
-
-  await setDoc(doc(db, 'users', request.fromUserId, 'friends', current.uid), {
-    friendId: current.uid,
-    friendDisplayName: current.displayName || 'Player',
-    friendPhotoURL: current.photoURL || '',
-    friendRating: 1200,
     addedAt: now,
   });
 }
@@ -355,9 +347,6 @@ export async function removeFriend(friendId: string): Promise<void> {
   if (!current || !friendId) return;
 
   await deleteDoc(doc(db, 'users', current.uid, 'friends', friendId));
-  try {
-    await deleteDoc(doc(db, 'users', friendId, 'friends', current.uid));
-  } catch {}
 }
 
 /**

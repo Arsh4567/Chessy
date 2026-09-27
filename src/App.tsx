@@ -18,7 +18,10 @@ import {
   syncUserDataFromFirestore,
   getActiveFirebaseUserId,
   setActiveFirebaseUserId,
-  clearUserSessionData
+  clearUserSessionData,
+  resetUserStats,
+  createDefaultStats,
+  createDefaultPreferences
 } from './utils/storage';
 import { useAuth } from './context/AuthContext';
 import { AuthModal } from './components/Auth/AuthModal';
@@ -101,8 +104,8 @@ export default function App() {
     } else {
       // User signed out: reset in-memory state cleanly
       clearUserSessionData();
-      setStats({ ...DEFAULT_STATS });
-      setPreferences({ ...DEFAULT_PREFERENCES });
+      setStats(createDefaultStats());
+      setPreferences(createDefaultPreferences());
     }
 
     return () => {
@@ -466,9 +469,9 @@ export default function App() {
                 } catch {}
                 setActiveTab('analyze');
               }}
-              onResetStats={() => {
-                localStorage.removeItem('gm_chess_user_stats_v2');
-                setStats(loadUserStats());
+              onResetStats={async () => {
+                const freshStats = await resetUserStats(user?.uid);
+                setStats({ ...freshStats, history: [], multiplayerHistory: [] });
               }}
               onNavigateToPlay={() => setActiveTab('play')}
               onNavigateToPuzzles={() => setActiveTab('puzzles')}
