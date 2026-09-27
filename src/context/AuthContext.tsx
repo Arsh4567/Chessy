@@ -34,6 +34,7 @@ interface AuthContextType {
   signInAsGuest: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   signOutUser: () => Promise<void>;
+  updateUserProfile: (displayName: string, photoURL?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -50,6 +51,7 @@ const AuthContext = createContext<AuthContextType>({
   signInAsGuest: async () => {},
   resetPassword: async () => {},
   signOutUser: async () => {},
+  updateUserProfile: async () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -154,6 +156,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (cleanName) {
           await updateProfile(result.user, { displayName: cleanName });
         }
+        await result.user.reload();
+        const freshUser = auth.currentUser;
+        setUser(freshUser ? Object.assign(Object.create(Object.getPrototypeOf(freshUser)), freshUser) : null);
+        if (auth.currentUser) {
+          await syncUserProfileToFirestore({
+            uid: auth.currentUser.uid,
+            displayName: cleanName,
+            photoURL: auth.currentUser.photoURL || '',
+            email: auth.currentUser.email || null,
+          });
+        }
         closeAuthModal();
         return;
       } catch (linkError: any) {
@@ -172,6 +185,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
       if (cleanName) {
         await updateProfile(userCredential.user, { displayName: cleanName });
+      }
+      await userCredential.user.reload();
+      const freshUser = auth.currentUser;
+      setUser(freshUser ? Object.assign(Object.create(Object.getPrototypeOf(freshUser)), freshUser) : null);
+      if (auth.currentUser) {
+        await syncUserProfileToFirestore({
+          uid: auth.currentUser.uid,
+          displayName: cleanName,
+          photoURL: auth.currentUser.photoURL || '',
+          email: auth.currentUser.email || null,
+        });
       }
       closeAuthModal();
     } catch (error: any) {
@@ -242,7 +266,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
-   * Sends password reset email
+   * Sends password reset email with generic failure protection to prevent user enumeration
    */
   const resetPassword = async (email: string) => {
     const cleanEmail = email.trim();
@@ -253,7 +277,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await sendPasswordResetEmail(auth, cleanEmail);
     } catch (error: any) {
+      const code = (error?.code || '').toLowerCase();
+      // Prevent user enumeration attacks!
+      if (
+        code.includes('user-not-found') ||
+        code.includes('invalid-credential') ||
+        code.includes('invalid-email')
+      ) {
+        return; // Silently succeed to prevent attackers from confirming account existence
+      }
       throw new Error(getFriendlyAuthErrorMessage(error));
+    }
+  };
+
+  /**
+   * Updates user display name and/or photoURL and immediately synchronizes Firestore and auth state
+   */
+  const updateUserProfile = async (displayName: string, photoURL?: string) => {
+    const current = auth.currentUser;
+    if (!current) throw new Error('Unauthenticated');
+
+    const cleanName = displayName.trim();
+    if (!cleanName) throw new Error('Display name cannot be empty');
+
+    const updatePayload: { displayName: string; photoURL?: string } = { displayName: cleanName };
+    if (photoURL !== undefined) updatePayload.photoURL = photoURL;
+
+    await updateProfile(current, updatePayload);
+    await current.reload();
+    const freshUser = auth.currentUser;
+    setUser(freshUser ? Object.assign(Object.create(Object.getPrototypeOf(freshUser)), freshUser) : null);
+
+    if (freshUser) {
+      await syncUserProfileToFirestore({
+        uid: freshUser.uid,
+        displayName: cleanName,
+        photoURL: freshUser.photoURL || '',
+        email: freshUser.email || null,
+      });
     }
   };
 
@@ -287,7 +348,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signInWithGoogle,
       signInAsGuest,
       resetPassword,
-      signOutUser 
+      signOutUser,
+      updateUserProfile
     }}>
       {children}
     </AuthContext.Provider>

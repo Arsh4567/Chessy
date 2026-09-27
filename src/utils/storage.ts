@@ -4,10 +4,10 @@
  * Features:
  * - Safe factory functions (createDefaultStats, createDefaultPreferences) preventing shared array references.
  * - Atomic account-switching and monotonic session generation tracking.
- * - Zero cross-account data leakage.
+ * - Rollback on Firestore transaction failure: prevents local stats from diverging.
  * - Invalidation of stale in-flight Firestore promises after logout/login.
  * - Non-stale getActiveFirebaseUserId() bound strictly to auth.currentUser.
- * - True reset stats for current authenticated account and in-memory state.
+ * - True atomic reset stats that propagates errors when Firestore fails.
  */
 
 import {
@@ -18,6 +18,8 @@ import {
   recordMultiplayerGameTransaction,
   loadMatchHistoryFromFirestore,
   resetUserStatsInFirestore,
+  recordPuzzleSolvedTransaction,
+  recordLocalGameTransaction,
 } from '../firebase/firestoreService';
 import { INITIAL_RATING, calculateEloUpdate } from './eloRating';
 import { auth } from '../firebase/config';
@@ -128,6 +130,7 @@ let currentSessionGeneration = 0;
 let currentActiveUserId: string | null = null;
 let inMemoryStats: UserStats = createDefaultStats();
 let inMemoryPrefs: UserPreferences = createDefaultPreferences();
+const recordedMatchIds = new Set<string>();
 
 /**
  * Returns current authenticated Firebase user UID.
@@ -157,6 +160,7 @@ export function setActiveFirebaseUserId(uid: string | null) {
 export function clearUserSessionData() {
   currentSessionGeneration++;
   currentActiveUserId = null;
+  recordedMatchIds.clear();
   inMemoryStats = createDefaultStats();
   inMemoryPrefs = createDefaultPreferences();
 }
@@ -195,19 +199,21 @@ export function loadUserStats(): UserStats {
 }
 
 /**
- * Resets user stats both in Firestore (if logged in) and in-memory atomically
+ * Resets user stats both in Firestore (if logged in) and in-memory atomically.
+ * Throws if the Firestore reset fails, preventing false reporting of success.
  */
 export async function resetUserStats(userId?: string): Promise<UserStats> {
   const targetUid = userId || getActiveFirebaseUserId();
-  inMemoryStats = createDefaultStats();
 
   if (targetUid && auth.currentUser && auth.currentUser.uid === targetUid) {
-    try {
-      await resetUserStatsInFirestore(targetUid);
-    } catch (err) {
-      console.warn('Reset user stats in Firestore warning:', err);
-    }
+    // Await authoritative reset in Firestore; do NOT swallow error!
+    await resetUserStatsInFirestore(targetUid);
   }
+
+  // Increment session generation to invalidate any race-condition in-flight writes
+  currentSessionGeneration++;
+  recordedMatchIds.clear();
+  inMemoryStats = createDefaultStats();
 
   return {
     ...inMemoryStats,
@@ -292,6 +298,13 @@ export function recordGameResult(
   timeControl: string,
   pgn: string
 ): UserStats {
+  const mutationGen = currentSessionGeneration;
+  const rollbackSnapshot: UserStats = {
+    ...inMemoryStats,
+    history: [...inMemoryStats.history],
+    multiplayerHistory: [...inMemoryStats.multiplayerHistory],
+  };
+
   inMemoryStats.gamesPlayed += 1;
   if (result === 'win') inMemoryStats.wins += 1;
   else if (result === 'loss') inMemoryStats.losses += 1;
@@ -317,8 +330,12 @@ export function recordGameResult(
 
   const uid = getActiveFirebaseUserId();
   if (uid && auth.currentUser && auth.currentUser.uid === uid) {
-    saveUserStatsToFirestore(uid, inMemoryStats).catch((err) => {
-      console.warn('Firebase stats sync warning:', err);
+    recordLocalGameTransaction(uid, result).catch((err) => {
+      console.warn('Atomic game transaction error:', err);
+      // Revert if still on the same session generation
+      if (mutationGen === currentSessionGeneration) {
+        inMemoryStats = rollbackSnapshot;
+      }
     });
   }
 
@@ -330,14 +347,29 @@ export function recordGameResult(
 }
 
 export function recordPuzzleSolved(ratingDelta: number): UserStats {
+  const mutationGen = currentSessionGeneration;
+  const prevRating = inMemoryStats.puzzleRating;
+  const prevSolved = inMemoryStats.puzzlesSolved;
+
   inMemoryStats.puzzlesSolved += 1;
-  inMemoryStats.puzzleRating = Math.max(400, inMemoryStats.puzzleRating + ratingDelta);
+  inMemoryStats.puzzleRating = Math.max(400, Math.min(3500, inMemoryStats.puzzleRating + ratingDelta));
 
   const uid = getActiveFirebaseUserId();
   if (uid && auth.currentUser && auth.currentUser.uid === uid) {
-    saveUserStatsToFirestore(uid, inMemoryStats).catch((err) => {
-      console.warn('Firebase puzzle sync warning:', err);
-    });
+    recordPuzzleSolvedTransaction(uid, ratingDelta)
+      .then((authoritative) => {
+        if (mutationGen === currentSessionGeneration) {
+          inMemoryStats.puzzleRating = authoritative.puzzleRating;
+          inMemoryStats.puzzlesSolved = authoritative.puzzlesSolved;
+        }
+      })
+      .catch((err) => {
+        console.warn('Atomic puzzle transaction error:', err);
+        if (mutationGen === currentSessionGeneration) {
+          inMemoryStats.puzzleRating = prevRating;
+          inMemoryStats.puzzlesSolved = prevSolved;
+        }
+      });
   }
 
   return {
@@ -348,7 +380,8 @@ export function recordPuzzleSolved(ratingDelta: number): UserStats {
 }
 
 /**
- * Records a completed multiplayer game and applies the advance Elo rating system
+ * Records a completed multiplayer game and applies the advance Elo rating system.
+ * Prevents local multiplayer stats from diverging by rolling back if the Firestore transaction fails!
  */
 export function recordMultiplayerGameResult(params: {
   matchId?: string;
@@ -386,6 +419,40 @@ export function recordMultiplayerGameResult(params: {
   const newRating = params.serverNewRating !== undefined ? params.serverNewRating : localCalc.newRating;
   const ratingDelta = params.serverRatingDelta !== undefined ? params.serverRatingDelta : localCalc.ratingDelta;
 
+  const cleanMatchId = params.matchId || (params.roomId ? `match_${params.roomId}` : `match_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+
+  // Prevent duplicate game-result recording with idempotent match IDs
+  if (recordedMatchIds.has(cleanMatchId)) {
+    return {
+      stats: {
+        ...inMemoryStats,
+        history: [...inMemoryStats.history],
+        multiplayerHistory: [...inMemoryStats.multiplayerHistory],
+      },
+      oldRating: currentRating,
+      newRating: currentRating,
+      ratingDelta: 0,
+      calc: {
+        isProvisional: localCalc.isProvisional,
+        matchesPlayed: inMemoryStats.multiplayerGamesPlayed,
+        performanceTier: localCalc.performanceTier,
+      },
+    };
+  }
+  recordedMatchIds.add(cleanMatchId);
+  if (recordedMatchIds.size > 200) {
+    const oldest = recordedMatchIds.values().next().value;
+    if (oldest) recordedMatchIds.delete(oldest);
+  }
+
+  const mutationGen = currentSessionGeneration;
+  // Snapshot before optimistic mutation for atomic rollback if remote fails
+  const rollbackSnapshot: UserStats = {
+    ...inMemoryStats,
+    history: [...inMemoryStats.history],
+    multiplayerHistory: [...inMemoryStats.multiplayerHistory],
+  };
+
   inMemoryStats.multiplayerGamesPlayed = currentGamesPlayed + 1;
   inMemoryStats.multiplayerRating = newRating;
   inMemoryStats.multiplayerPeakRating = Math.max(
@@ -400,8 +467,6 @@ export function recordMultiplayerGameResult(params: {
   } else {
     inMemoryStats.multiplayerDraws = (inMemoryStats.multiplayerDraws ?? 0) + 1;
   }
-
-  const cleanMatchId = params.matchId || `match_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   const matchRecord: MultiplayerMatchRecord = {
     id: cleanMatchId,
@@ -427,7 +492,7 @@ export function recordMultiplayerGameResult(params: {
     inMemoryStats.multiplayerHistory.pop();
   }
 
-  // Persist atomically to Firebase Firestore using atomic transaction
+  // Persist atomically to Firebase Firestore with rollback on failure
   const uid = getActiveFirebaseUserId();
   if (uid && auth.currentUser && auth.currentUser.uid === uid) {
     recordMultiplayerGameTransaction(uid, matchRecord, {
@@ -437,7 +502,12 @@ export function recordMultiplayerGameResult(params: {
       ratingDelta,
       isProvisional: localCalc.isProvisional,
     }).catch((err) => {
-      console.warn('Firebase atomic match transaction warning:', err);
+      console.error('Firebase atomic match transaction failed! Rolling back local stats to prevent divergence:', err);
+      // Reconcile and roll back in-memory stats ONLY if session has not changed or reset
+      if (mutationGen === currentSessionGeneration) {
+        inMemoryStats = rollbackSnapshot;
+        recordedMatchIds.delete(cleanMatchId);
+      }
     });
   }
 

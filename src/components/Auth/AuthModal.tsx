@@ -73,18 +73,18 @@ export const AuthModal: React.FC = () => {
       return;
     }
 
-    if (mode === 'forgot') {
-      setIsSubmitting(true);
-      try {
-        await resetPassword(cleanEmail);
-        setSuccessMsg('Password reset link sent! Please check your inbox.');
-      } catch (err: any) {
-        setErrorMsg(err.message || 'Failed to send reset link.');
-      } finally {
-        setIsSubmitting(false);
+      if (mode === 'forgot') {
+        setIsSubmitting(true);
+        try {
+          await resetPassword(cleanEmail);
+          setSuccessMsg('If an account exists with this email, a password reset link has been sent. Please check your inbox.');
+        } catch (err: any) {
+          setErrorMsg(err.message || 'Failed to send reset link.');
+        } finally {
+          setIsSubmitting(false);
+        }
+        return;
       }
-      return;
-    }
 
     if (!password) {
       setErrorMsg('Please enter your password.');

@@ -11,11 +11,17 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // 1. Consolidated Public User Profile (Read: Public, Write: Owner only)
+    // 1. Consolidated Public User Profile (Strict Allowed Fields)
     match /users/{userId}/public/{docId} {
       allow read: if true;
       allow write: if isOwner(userId) &&
-        (request.resource == null || request.resource.data.userId == request.auth.uid);
+        (request.resource == null || (
+          request.resource.data.userId == request.auth.uid &&
+          request.resource.data.keys().hasOnly(['userId', 'displayName', 'photoURL', 'createdAt', 'updatedAt']) &&
+          request.resource.data.displayName is string &&
+          request.resource.data.displayName.size() <= 50 &&
+          (!('photoURL' in request.resource.data) || request.resource.data.photoURL is string)
+        ));
     }
 
     // 2. Private User Account Data (Read/Write: Owner only)
@@ -23,9 +29,22 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
-    // 3. User Stats, Tactical Elo, and Personal Records (Read/Write: Owner only)
+    // 3. User Stats, Tactical Elo, and Personal Records (Bounded Authoritative Ranges)
     match /users/{userId}/stats/{docId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) &&
+        (request.resource == null || (
+          request.resource.data.userId == request.auth.uid &&
+          request.resource.data.keys().hasOnly([
+            'userId', 'gamesPlayed', 'wins', 'losses', 'draws',
+            'puzzleRating', 'puzzlesSolved', 'multiplayerRating',
+            'multiplayerGamesPlayed', 'multiplayerWins', 'multiplayerLosses',
+            'multiplayerDraws', 'multiplayerPeakRating', 'updatedAt'
+          ]) &&
+          (!('gamesPlayed' in request.resource.data) || (request.resource.data.gamesPlayed is number && request.resource.data.gamesPlayed >= 0)) &&
+          (!('multiplayerRating' in request.resource.data) || (request.resource.data.multiplayerRating is number && request.resource.data.multiplayerRating >= 100 && request.resource.data.multiplayerRating <= 3500)) &&
+          (!('puzzleRating' in request.resource.data) || (request.resource.data.puzzleRating is number && request.resource.data.puzzleRating >= 100 && request.resource.data.puzzleRating <= 3500))
+        ));
     }
 
     // 4. User Preferences & Settings (Read/Write: Owner only)
@@ -33,17 +52,43 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
-    // 5. Complete Multiplayer Match Records & PGN History (Read/Write: Owner only)
+    // 5. Complete Multiplayer Match Records (Immutable Once Written)
     match /users/{userId}/matches/{matchId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+        request.resource.data.id == matchId &&
+        request.resource.data.result in ['win', 'loss', 'draw'] &&
+        request.resource.data.movesCount is number &&
+        request.resource.data.movesCount >= 0 &&
+        request.resource.data.ratingDelta is number &&
+        request.resource.data.ratingDelta >= -100 &&
+        request.resource.data.ratingDelta <= 100 &&
+        request.resource.data.keys().hasOnly([
+          'id', 'roomId', 'date', 'createdAt', 'result',
+          'opponentName', 'opponentRating', 'ratingBefore',
+          'ratingAfter', 'ratingDelta', 'isProvisional',
+          'matchNumber', 'playerColor', 'movesCount',
+          'timeControl', 'pgn'
+        ]);
+      allow update: if false; // Match records are immutable history
+      allow delete: if isOwner(userId);
     }
 
-    // 6. Friends List (Read/Write: Owner only)
+    // 6. Friends List (Supports Reciprocal Friendship Creation Safely)
     match /users/{userId}/friends/{friendId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) || (
+        // Allow reciprocal friendship creation when an accepted friend request exists
+        isAuthenticated() &&
+        request.auth.uid == friendId &&
+        request.resource.data.friendId == request.auth.uid
+      );
+      allow delete: if isOwner(userId) || (
+        isAuthenticated() && request.auth.uid == friendId
+      );
     }
 
-    // 7. Public Real-time Leaderboard (Read: Public, Write: Authoritative Backend Server only)
+    // 7. Public Real-time Leaderboard (Read: Public, Write: Server/Admin only)
     match /public_leaderboard/{userId} {
       allow read: if true;
       allow write: if false;
@@ -98,15 +143,14 @@ service cloud.firestore {
       allow read, write: if isChatParticipant();
       
       match /messages/{messageId} {
-        allow read: if isAuthenticated() && (
-          resource.data.senderId == request.auth.uid ||
-          resource.data.recipientId == request.auth.uid
-        );
+        allow read: if isChatParticipant();
         allow create: if isAuthenticated() && 
           request.resource.data.senderId == request.auth.uid &&
           request.resource.data.recipientId != request.auth.uid &&
-          (chatId == request.auth.uid + '_chat_' + request.resource.data.recipientId ||
-           chatId == request.resource.data.recipientId + '_chat_' + request.auth.uid);
+          (
+            chatId == request.auth.uid + '_chat_' + request.resource.data.recipientId ||
+            chatId == request.resource.data.recipientId + '_chat_' + request.auth.uid
+          );
         allow update: if isAuthenticated() && 
           resource.data.recipientId == request.auth.uid &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
@@ -126,7 +170,11 @@ service cloud.firestore {
         request.resource.data.challengerId == request.auth.uid &&
         request.resource.data.challengedId != request.auth.uid &&
         request.resource.data.status == 'pending' &&
-        request.resource.data.roomId is string;
+        request.resource.data.roomId is string &&
+        request.resource.data.roomId.size() >= 5 &&
+        request.resource.data.roomId.size() <= 60 &&
+        request.resource.data.timeControl is map &&
+        request.resource.data.expiresAt is string;
 
       allow update: if isAuthenticated() && (
         // Challenged player can accept or decline a pending challenge

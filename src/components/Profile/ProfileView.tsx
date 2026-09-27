@@ -28,10 +28,11 @@ import {
 interface ProfileViewProps {
   stats: UserStats;
   onReviewGame: (pgn: string) => void;
-  onResetStats: () => void;
+  onResetStats: () => Promise<void> | void;
   onNavigateToPlay: () => void;
   onNavigateToPuzzles: () => void;
   onNavigateToMultiplayer?: () => void;
+  isSyncing?: boolean;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -41,9 +42,30 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onNavigateToPlay,
   onNavigateToPuzzles,
   onNavigateToMultiplayer,
+  isSyncing = false,
 }) => {
   const [historyTab, setHistoryTab] = useState<'multiplayer' | 'local'>('multiplayer');
+  const [isConfirmingReset, setIsConfirmingReset] = useState<boolean>(false);
+  const [isResetting, setIsResetting] = useState<boolean>(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
   const { user, isAnonymous, openAuthModal, signOutUser } = useAuth();
+
+  const handleExecuteReset = async () => {
+    setIsResetting(true);
+    setResetError(null);
+    setResetSuccess(null);
+    try {
+      await onResetStats();
+      setIsConfirmingReset(false);
+      setResetSuccess('All statistics and rating progression have been reset.');
+      setTimeout(() => setResetSuccess(null), 4000);
+    } catch (err: any) {
+      setResetError(err?.message || 'Failed to reset cloud statistics. Please check your network connection.');
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   const botWinRate = stats.gamesPlayed > 0 ? Math.round((stats.wins / stats.gamesPlayed) * 100) : 0;
   
@@ -134,15 +156,57 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </button>
           )}
 
-          <button
-            onClick={onResetStats}
-            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 hover:border-rose-500/40 border border-slate-700/80 text-slate-300 hover:text-rose-300 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Reset Stats</span>
-          </button>
+          {isConfirmingReset ? (
+            <div className="flex items-center gap-1.5 p-1 bg-rose-950/70 border border-rose-500/50 rounded-xl">
+              <span className="text-[11px] font-bold text-rose-300 px-2">Reset all data?</span>
+              <button
+                disabled={isResetting}
+                onClick={handleExecuteReset}
+                className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1"
+              >
+                {isResetting && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                <span>Confirm</span>
+              </button>
+              <button
+                disabled={isResetting}
+                onClick={() => { setIsConfirmingReset(false); setResetError(null); }}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsConfirmingReset(true)}
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 hover:border-rose-500/40 border border-slate-700/80 text-slate-300 hover:text-rose-300 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Reset Stats</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {resetError && (
+        <div className="p-3.5 rounded-2xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between gap-3 animate-in fade-in">
+          <span>⚠️ {resetError}</span>
+          <button onClick={() => setResetError(null)} className="text-rose-400 hover:text-white font-bold cursor-pointer">Dismiss</button>
+        </div>
+      )}
+
+      {resetSuccess && (
+        <div className="p-3.5 rounded-2xl bg-emerald-950/50 border border-emerald-500/40 text-emerald-300 text-xs flex items-center justify-between gap-3 animate-in fade-in">
+          <span>✓ {resetSuccess}</span>
+          <button onClick={() => setResetSuccess(null)} className="text-emerald-400 hover:text-white font-bold cursor-pointer">Dismiss</button>
+        </div>
+      )}
+
+      {isSyncing && (
+        <div className="p-2.5 rounded-xl bg-sky-950/40 border border-sky-500/30 text-sky-300 text-xs flex items-center gap-2 animate-pulse">
+          <span className="w-3 h-3 border-2 border-sky-400 border-t-transparent rounded-full animate-spin shrink-0" />
+          <span>Syncing latest stats from Firebase Firestore...</span>
+        </div>
+      )}
 
 
       {/* Multiplayer Elo Rating Hero Section */}

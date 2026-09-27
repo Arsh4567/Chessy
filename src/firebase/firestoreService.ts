@@ -30,7 +30,40 @@ export interface LeaderboardEntry {
 }
 
 /**
- * Executes an async Firestore operation with exponential backoff retry
+ * Determines whether a Firestore error is transient and eligible for retry.
+ * Non-transient errors (permission-denied, unauthenticated, not-found, invalid-argument) fail fast!
+ */
+export function isTransientFirestoreError(error: any): boolean {
+  if (!error) return false;
+  const code = (error.code || '').toLowerCase();
+  const message = (error.message || '').toLowerCase();
+
+  if (
+    code === 'unavailable' ||
+    code === 'deadline-exceeded' ||
+    code === 'resource-exhausted' ||
+    code === 'aborted' ||
+    code === 'cancelled' ||
+    code.includes('network')
+  ) {
+    return true;
+  }
+
+  if (
+    message.includes('network') ||
+    message.includes('timeout') ||
+    message.includes('unavailable') ||
+    message.includes('offline') ||
+    message.includes('failed to fetch')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Executes an async Firestore operation with exponential backoff retry ONLY for transient errors.
  */
 export async function withRetry<T>(
   operation: () => Promise<T>,
@@ -45,7 +78,7 @@ export async function withRetry<T>(
       return await operation();
     } catch (error: any) {
       attempt++;
-      if (attempt >= maxRetries) {
+      if (attempt >= maxRetries || !isTransientFirestoreError(error)) {
         throw error;
       }
       await new Promise((res) => setTimeout(res, delay));
@@ -55,7 +88,7 @@ export async function withRetry<T>(
 }
 
 /**
- * Saves or updates user stats in Firestore with retry protection
+ * Saves or updates user stats in Firestore with transient retry protection
  */
 export async function saveUserStatsToFirestore(userId: string, stats: UserStats): Promise<void> {
   if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) return;
@@ -84,14 +117,18 @@ export async function saveUserStatsToFirestore(userId: string, stats: UserStats)
     );
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
   }
 }
 
 /**
- * Resets user stats in Firestore back to pristine initial ratings
+ * Resets user stats in Firestore back to pristine initial ratings.
+ * Throws on failure so callers know the operation did not silently succeed.
  */
 export async function resetUserStatsInFirestore(userId: string): Promise<void> {
-  if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) return;
+  if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) {
+    throw new Error('Unauthenticated stats reset attempt');
+  }
   const path = `users/${userId}/stats/current`;
 
   try {
@@ -117,7 +154,101 @@ export async function resetUserStatsInFirestore(userId: string): Promise<void> {
     );
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
   }
+}
+
+/**
+ * Atomically updates puzzle rating and puzzles solved in Firestore
+ */
+export async function recordPuzzleSolvedTransaction(
+  userId: string,
+  ratingDelta: number
+): Promise<{ puzzleRating: number; puzzlesSolved: number }> {
+  if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) {
+    throw new Error('Unauthenticated puzzle recording');
+  }
+
+  const userStatsRef = doc(db, 'users', userId, 'stats', 'current');
+
+  return await withRetry(() =>
+    runTransaction(db, async (transaction) => {
+      const statsDoc = await transaction.get(userStatsRef);
+      const currentData = statsDoc.exists() ? statsDoc.data() : {};
+
+      const currentRating = currentData.puzzleRating ?? 1500;
+      const newRating = Math.max(400, Math.min(3500, currentRating + ratingDelta));
+      const puzzlesSolved = (currentData.puzzlesSolved ?? 0) + 1;
+
+      transaction.set(
+        userStatsRef,
+        {
+          userId,
+          gamesPlayed: currentData.gamesPlayed ?? 0,
+          wins: currentData.wins ?? 0,
+          losses: currentData.losses ?? 0,
+          draws: currentData.draws ?? 0,
+          puzzleRating: newRating,
+          puzzlesSolved,
+          multiplayerRating: currentData.multiplayerRating ?? INITIAL_RATING,
+          multiplayerGamesPlayed: currentData.multiplayerGamesPlayed ?? 0,
+          multiplayerWins: currentData.multiplayerWins ?? 0,
+          multiplayerLosses: currentData.multiplayerLosses ?? 0,
+          multiplayerDraws: currentData.multiplayerDraws ?? 0,
+          multiplayerPeakRating: currentData.multiplayerPeakRating ?? INITIAL_RATING,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      return { puzzleRating: newRating, puzzlesSolved };
+    })
+  );
+}
+
+/**
+ * Atomically records a local/bot game result in Firestore
+ */
+export async function recordLocalGameTransaction(
+  userId: string,
+  result: 'win' | 'loss' | 'draw'
+): Promise<void> {
+  if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) return;
+
+  const userStatsRef = doc(db, 'users', userId, 'stats', 'current');
+
+  await withRetry(() =>
+    runTransaction(db, async (transaction) => {
+      const statsDoc = await transaction.get(userStatsRef);
+      const currentData = statsDoc.exists() ? statsDoc.data() : {};
+
+      const gamesPlayed = (currentData.gamesPlayed ?? 0) + 1;
+      const wins = result === 'win' ? (currentData.wins ?? 0) + 1 : currentData.wins ?? 0;
+      const losses = result === 'loss' ? (currentData.losses ?? 0) + 1 : currentData.losses ?? 0;
+      const draws = result === 'draw' ? (currentData.draws ?? 0) + 1 : currentData.draws ?? 0;
+
+      transaction.set(
+        userStatsRef,
+        {
+          userId,
+          gamesPlayed,
+          wins,
+          losses,
+          draws,
+          puzzleRating: currentData.puzzleRating ?? 1500,
+          puzzlesSolved: currentData.puzzlesSolved ?? 0,
+          multiplayerRating: currentData.multiplayerRating ?? INITIAL_RATING,
+          multiplayerGamesPlayed: currentData.multiplayerGamesPlayed ?? 0,
+          multiplayerWins: currentData.multiplayerWins ?? 0,
+          multiplayerLosses: currentData.multiplayerLosses ?? 0,
+          multiplayerDraws: currentData.multiplayerDraws ?? 0,
+          multiplayerPeakRating: currentData.multiplayerPeakRating ?? INITIAL_RATING,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    })
+  );
 }
 
 /**
@@ -133,19 +264,19 @@ export async function loadUserStatsFromFirestore(userId: string): Promise<UserSt
     if (docSnap.exists()) {
       const data = docSnap.data();
       return {
-        gamesPlayed: data.gamesPlayed ?? 0,
-        wins: data.wins ?? 0,
-        losses: data.losses ?? 0,
-        draws: data.draws ?? 0,
-        puzzleRating: data.puzzleRating ?? 1500,
-        puzzlesSolved: data.puzzlesSolved ?? 0,
+        gamesPlayed: Number(data.gamesPlayed) || 0,
+        wins: Number(data.wins) || 0,
+        losses: Number(data.losses) || 0,
+        draws: Number(data.draws) || 0,
+        puzzleRating: Number(data.puzzleRating) || 1500,
+        puzzlesSolved: Number(data.puzzlesSolved) || 0,
         history: [],
-        multiplayerRating: data.multiplayerRating ?? INITIAL_RATING,
-        multiplayerGamesPlayed: data.multiplayerGamesPlayed ?? 0,
-        multiplayerWins: data.multiplayerWins ?? 0,
-        multiplayerLosses: data.multiplayerLosses ?? 0,
-        multiplayerDraws: data.multiplayerDraws ?? 0,
-        multiplayerPeakRating: data.multiplayerPeakRating ?? data.multiplayerRating ?? INITIAL_RATING,
+        multiplayerRating: Number(data.multiplayerRating) || INITIAL_RATING,
+        multiplayerGamesPlayed: Number(data.multiplayerGamesPlayed) || 0,
+        multiplayerWins: Number(data.multiplayerWins) || 0,
+        multiplayerLosses: Number(data.multiplayerLosses) || 0,
+        multiplayerDraws: Number(data.multiplayerDraws) || 0,
+        multiplayerPeakRating: Number(data.multiplayerPeakRating) || Number(data.multiplayerRating) || INITIAL_RATING,
         multiplayerHistory: [],
       };
     }
@@ -157,7 +288,7 @@ export async function loadUserStatsFromFirestore(userId: string): Promise<UserSt
 }
 
 /**
- * Saves user preferences to Firestore with retry protection
+ * Saves user preferences to Firestore with transient retry protection
  */
 export async function saveUserPreferencesToFirestore(
   userId: string,
@@ -183,6 +314,7 @@ export async function saveUserPreferencesToFirestore(
     );
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
   }
 }
 
@@ -202,13 +334,13 @@ export async function loadUserPreferencesFromFirestore(
       const data = docSnap.data();
       return {
         boardTheme: data.boardTheme ?? 'emerald',
-        stockfishLevel: data.stockfishLevel ?? 10,
-        engineThinkingSeconds: data.engineThinkingSeconds ?? 2,
-        soundEnabled: data.soundEnabled ?? true,
-        showCoordinates: data.showCoordinates ?? true,
-        showLegalMoves: data.showLegalMoves ?? true,
-        autoQueen: data.autoQueen ?? false,
-        defaultTimeControl: data.defaultTimeControl ?? '5-0',
+        stockfishLevel: typeof data.stockfishLevel === 'number' ? data.stockfishLevel : 10,
+        engineThinkingSeconds: typeof data.engineThinkingSeconds === 'number' ? data.engineThinkingSeconds : 2,
+        soundEnabled: data.soundEnabled !== undefined ? Boolean(data.soundEnabled) : true,
+        showCoordinates: data.showCoordinates !== undefined ? Boolean(data.showCoordinates) : true,
+        showLegalMoves: data.showLegalMoves !== undefined ? Boolean(data.showLegalMoves) : true,
+        autoQueen: data.autoQueen !== undefined ? Boolean(data.autoQueen) : false,
+        defaultTimeControl: data.defaultTimeControl || '5-0',
       };
     }
     return null;
@@ -216,6 +348,38 @@ export async function loadUserPreferencesFromFirestore(
     handleFirestoreError(error, OperationType.GET, path);
     return null;
   }
+}
+
+/**
+ * Robustly parses a leaderboard document handling missing or legacy field formats
+ */
+function parseLeaderboardDoc(id: string, data: any): LeaderboardEntry {
+  const rating = typeof data.multiplayerRating === 'number'
+    ? data.multiplayerRating
+    : Number(data.rating) || INITIAL_RATING;
+
+  const displayName = data.displayName || data.username || data.name || 'Anonymous Grandmaster';
+  const gamesPlayed = typeof data.multiplayerGamesPlayed === 'number'
+    ? data.multiplayerGamesPlayed
+    : Number(data.gamesPlayed) || 0;
+
+  const wins = typeof data.multiplayerWins === 'number' ? data.multiplayerWins : Number(data.wins) || 0;
+  const losses = typeof data.multiplayerLosses === 'number' ? data.multiplayerLosses : Number(data.losses) || 0;
+  const draws = typeof data.multiplayerDraws === 'number' ? data.multiplayerDraws : Number(data.draws) || 0;
+  const puzzleRating = typeof data.puzzleRating === 'number' ? data.puzzleRating : 1500;
+
+  return {
+    userId: data.userId || id,
+    displayName,
+    photoURL: data.photoURL || '',
+    multiplayerRating: rating,
+    multiplayerGamesPlayed: gamesPlayed,
+    multiplayerWins: wins,
+    multiplayerLosses: losses,
+    multiplayerDraws: draws,
+    puzzleRating,
+    updatedAt: data.updatedAt || new Date().toISOString(),
+  };
 }
 
 /**
@@ -232,29 +396,35 @@ export async function loadLeaderboardFromFirestore(limitCount: number = 50): Pro
     const snap = await withRetry(() => getDocs(q));
     const entries: LeaderboardEntry[] = [];
     snap.forEach((d) => {
-      const data = d.data();
-      entries.push({
-        userId: d.id,
-        displayName: data.displayName || 'Player',
-        photoURL: data.photoURL || '',
-        multiplayerRating: data.multiplayerRating ?? INITIAL_RATING,
-        multiplayerGamesPlayed: data.multiplayerGamesPlayed ?? 0,
-        multiplayerWins: data.multiplayerWins ?? 0,
-        multiplayerLosses: data.multiplayerLosses ?? 0,
-        multiplayerDraws: data.multiplayerDraws ?? 0,
-        puzzleRating: data.puzzleRating ?? 1500,
-        updatedAt: data.updatedAt || new Date().toISOString(),
-      });
+      entries.push(parseLeaderboardDoc(d.id, d.data()));
     });
-    return entries;
+    if (entries.length > 0) return entries;
+
+    // Fallback: If no docs have multiplayerRating field yet, query by collection limit
+    const fallbackQ = query(collection(db, 'public_leaderboard'), limit(limitCount));
+    const fallbackSnap = await withRetry(() => getDocs(fallbackQ));
+    fallbackSnap.forEach((d) => {
+      entries.push(parseLeaderboardDoc(d.id, d.data()));
+    });
+    return entries.sort((a, b) => b.multiplayerRating - a.multiplayerRating);
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, path);
-    return [];
+    try {
+      const fallbackQ = query(collection(db, 'public_leaderboard'), limit(limitCount));
+      const fallbackSnap = await getDocs(fallbackQ);
+      const entries: LeaderboardEntry[] = [];
+      fallbackSnap.forEach((d) => {
+        entries.push(parseLeaderboardDoc(d.id, d.data()));
+      });
+      return entries.sort((a, b) => b.multiplayerRating - a.multiplayerRating);
+    } catch {
+      handleFirestoreError(error, OperationType.LIST, path);
+      return [];
+    }
   }
 }
 
 /**
- * Subscribes to real-time leaderboard updates
+ * Subscribes to real-time leaderboard updates with robust legacy document parsing
  */
 export function subscribeToLeaderboard(
   callback: (entries: LeaderboardEntry[]) => void,
@@ -277,19 +447,7 @@ export function subscribeToLeaderboard(
       (snap) => {
         const entries: LeaderboardEntry[] = [];
         snap.forEach((d) => {
-          const data = d.data();
-          entries.push({
-            userId: d.id,
-            displayName: data.displayName || 'Player',
-            photoURL: data.photoURL || '',
-            multiplayerRating: data.multiplayerRating ?? INITIAL_RATING,
-            multiplayerGamesPlayed: data.multiplayerGamesPlayed ?? 0,
-            multiplayerWins: data.multiplayerWins ?? 0,
-            multiplayerLosses: data.multiplayerLosses ?? 0,
-            multiplayerDraws: data.multiplayerDraws ?? 0,
-            puzzleRating: data.puzzleRating ?? 1500,
-            updatedAt: data.updatedAt || new Date().toISOString(),
-          });
+          entries.push(parseLeaderboardDoc(d.id, d.data()));
         });
         callback(entries);
       },
@@ -383,6 +541,7 @@ export async function recordMultiplayerGameTransaction(
     );
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `users/${userId}/stats/current`);
+    throw error;
   }
 }
 

@@ -824,6 +824,14 @@ export class StockfishEngine {
           pendingEval = evalResult;
           const now = performance.now();
 
+          // Cap deep continuous search at depth 24 or confirmed mate to protect CPU & battery
+          if (evalResult.depth >= 24 || evalResult.mate !== undefined) {
+            if (this.isSearching) {
+              this.sendCommand('stop');
+              this.isSearching = false;
+            }
+          }
+
           // Dispatch immediately on first depth or intervals (60ms) or mate discoveries
           if (evalResult.depth <= 2 || evalResult.mate !== undefined || now - lastUpdateTime >= 60) {
             flushUpdate();
@@ -834,8 +842,17 @@ export class StockfishEngine {
 
         this.setSkillLevel(20);
         this.sendCommand(`position fen ${this.currentFen}`);
-        this.sendCommand('go depth 28');
+        this.sendCommand('go depth 24');
         this.isSearching = true;
+
+        // Bounded computation safety ceiling: gracefully conclude search after 15s to prevent CPU/battery abuse
+        searchCappedTimer = setTimeout(() => {
+          if (isActive && sessionId === this.currentAnalysisSessionId && this.isSearching) {
+            this.sendCommand('stop');
+            this.isSearching = false;
+            flushUpdate();
+          }
+        }, 15000);
       } catch (err) {
         console.warn('[Stockfish] Continuous analysis error:', err);
       }

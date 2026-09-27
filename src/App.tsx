@@ -71,12 +71,13 @@ const SettingsModal = React.lazy(() =>
 );
 
 export default function App() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   // Navigation & Preferences (Home is the modern command center view)
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [preferences, setPreferences] = useState<UserPreferences>(loadPreferences);
   const [stats, setStats] = useState<UserStats>(loadUserStats);
+  const [isSyncingStats, setIsSyncingStats] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showFenModal, setShowFenModal] = useState<boolean>(false);
 
@@ -90,6 +91,7 @@ export default function App() {
     const currentUid = user?.uid;
 
     if (currentUid) {
+      setIsSyncingStats(true);
       setActiveFirebaseUserId(currentUid);
       syncUserDataFromFirestore(currentUid)
         .then(({ stats: syncedStats, prefs: syncedPrefs }) => {
@@ -100,8 +102,14 @@ export default function App() {
         })
         .catch((err) => {
           console.warn('Firebase Firestore sync notice:', err);
+        })
+        .finally(() => {
+          if (isCurrent) {
+            setIsSyncingStats(false);
+          }
         });
     } else {
+      setIsSyncingStats(false);
       // User signed out: reset in-memory state cleanly
       clearUserSessionData();
       setStats(createDefaultStats());
@@ -209,7 +217,7 @@ export default function App() {
     savePreferences(newPrefs);
   };
 
-  // Support URL param ?fen=... on mount
+  // Support URL param ?fen=... on mount with robust chess validation
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -222,13 +230,24 @@ export default function App() {
       }
       const fenParam = urlParams.get('fen') || urlParams.get('position');
       if (fenParam) {
-        handleLoadPosition(decodeURIComponent(fenParam));
+        const decoded = decodeURIComponent(fenParam).trim();
+        if (decoded.length <= 128 && /^[a-zA-Z0-9\s\/\-\+]+$/.test(decoded)) {
+          try {
+            const test = new Chess(decoded);
+            handleLoadPosition(test.fen());
+          } catch {
+            console.warn('Invalid URL FEN position ignored');
+          }
+        }
         return;
       }
       if (window.location.hash && window.location.hash.includes('/')) {
-        const hashFen = decodeURIComponent(window.location.hash.substring(1));
-        if (hashFen.split('/').length >= 8) {
-          handleLoadPosition(hashFen);
+        const hashFen = decodeURIComponent(window.location.hash.substring(1)).trim();
+        if (hashFen.length <= 128 && /^[a-zA-Z0-9\s\/\-\+]+$/.test(hashFen)) {
+          try {
+            const test = new Chess(hashFen);
+            handleLoadPosition(test.fen());
+          } catch {}
         }
       }
     } catch (e) {
@@ -236,9 +255,12 @@ export default function App() {
     }
   }, [handleLoadPosition]);
 
-  // Expose global helpers on window for external test runners
+  // Expose global test helpers on window for authorized test environments
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const isDev = process.env.NODE_ENV !== 'production' || Boolean((window as any).__CHESSY_TEST_RUNNER__);
+    if (!isDev) return;
+
     (window as any).chess = chess;
     (window as any).chessRef = chessRef;
     (window as any).executeMove = executeMove;
@@ -251,6 +273,19 @@ export default function App() {
     (window as any).evaluationDepth = evaluationDepth;
     (window as any).setEvaluationDepth = handleDepthChange;
     (window as any).lichessData = lichessData;
+
+    return () => {
+      delete (window as any).chess;
+      delete (window as any).chessRef;
+      delete (window as any).executeMove;
+      delete (window as any).loadPosition;
+      delete (window as any).stockfish;
+      delete (window as any).stockfishEval;
+      delete (window as any).evaluatePosition;
+      delete (window as any).evaluationDepth;
+      delete (window as any).setEvaluationDepth;
+      delete (window as any).lichessData;
+    };
   }, [chess, chessRef, executeMove, handleLoadPosition, stockfishEval, evaluateCurrentPosition, evaluationDepth, handleDepthChange, lichessData]);
 
   const analysisInitialMoves = useMemo(() => {
@@ -445,6 +480,7 @@ export default function App() {
           <React.Suspense fallback={<div className="flex-1 flex items-center justify-center p-12 text-slate-400 text-xs font-mono"><span className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin mr-2" /> Loading Profile...</div>}>
             <ProfileView
               stats={stats}
+              isSyncing={isSyncingStats || authLoading}
               onReviewGame={(pgn) => {
                 setReviewPgn(pgn);
                 try {

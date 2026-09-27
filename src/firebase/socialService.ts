@@ -1,14 +1,10 @@
-/**
- * Firebase Firestore Social Service
- * Manages Friends, Presence Heartbeats, Direct Messaging, and Real-time Game Challenges.
- */
-
 import {
   collection,
   doc,
-  setDoc,
   getDoc,
   getDocs,
+  setDoc,
+  updateDoc,
   deleteDoc,
   query,
   where,
@@ -16,6 +12,7 @@ import {
   limit,
   onSnapshot,
   Unsubscribe,
+  writeBatch,
 } from 'firebase/firestore';
 import { db, auth } from './config';
 import { OperationType, handleFirestoreError } from './errors';
@@ -27,9 +24,9 @@ export interface FriendUser {
   displayName: string;
   photoURL?: string;
   rating?: number;
-  addedAt: string;
   status?: 'online' | 'in-game' | 'offline';
-  lastActive?: string;
+  currentRoomId?: string;
+  addedAt?: string;
 }
 
 export interface FriendRequest {
@@ -39,7 +36,7 @@ export interface FriendRequest {
   fromPhotoURL?: string;
   fromRating?: number;
   toUserId: string;
-  status: 'pending' | 'accepted' | 'declined';
+  status: 'pending' | 'accepted' | 'declined' | 'cancelled';
   createdAt: string;
   updatedAt?: string;
 }
@@ -112,40 +109,65 @@ export async function updateUserPresence(
 }
 
 /**
- * Subscribes to live presence status for a list of user IDs
+ * Subscribes to live presence status for a list of user IDs.
+ * Batches queries into chunks of at most 30 to comply with Firestore 'in' query limits!
  */
 export function subscribeToUsersPresence(
   userIds: string[],
   callback: (presenceMap: Record<string, UserPresence>) => void
 ): Unsubscribe {
-  if (!userIds || userIds.length === 0) {
+  const uniqueUids = Array.from(new Set(userIds.filter(Boolean)));
+  if (uniqueUids.length === 0) {
     callback({});
     return () => {};
   }
 
-  const chunk = userIds.slice(0, 30);
-  const q = query(collection(db, 'user_presence'), where('userId', 'in', chunk));
+  // Chunk into batches of up to 30 items
+  const batches: string[][] = [];
+  for (let i = 0; i < uniqueUids.length; i += 30) {
+    batches.push(uniqueUids.slice(i, i + 30));
+  }
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const presenceMap: Record<string, UserPresence> = {};
-      const now = Date.now();
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data() as UserPresence;
-        const lastActiveTime = data.lastActive ? new Date(data.lastActive).getTime() : 0;
-        const isRecent = now - lastActiveTime < 90000;
-        presenceMap[data.userId] = {
-          ...data,
-          status: isRecent ? data.status : 'offline',
-        };
-      });
-      callback(presenceMap);
-    },
-    (err) => {
-      console.warn('Presence subscription warning:', err);
+  const batchResults: Record<number, Record<string, UserPresence>> = {};
+  const unsubs: Unsubscribe[] = [];
+
+  const emitCombined = () => {
+    const combined: Record<string, UserPresence> = {};
+    for (const bIdx in batchResults) {
+      Object.assign(combined, batchResults[bIdx]);
     }
-  );
+    callback(combined);
+  };
+
+  batches.forEach((batch, idx) => {
+    const q = query(collection(db, 'user_presence'), where('userId', 'in', batch));
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const presenceMap: Record<string, UserPresence> = {};
+        const now = Date.now();
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as UserPresence;
+          const lastActiveTime = data.lastActive ? new Date(data.lastActive).getTime() : 0;
+          const isRecent = now - lastActiveTime < 90000;
+          presenceMap[data.userId] = {
+            ...data,
+            status: isRecent ? data.status : 'offline',
+          };
+        });
+        batchResults[idx] = presenceMap;
+        emitCombined();
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'user_presence (batch)');
+      }
+    );
+    unsubs.push(unsub);
+  });
+
+  return () => {
+    unsubs.forEach((u) => u());
+  };
 }
 
 /**
@@ -172,7 +194,7 @@ export function subscribeToFriends(
           userId: data.friendId || docSnap.id,
           displayName: data.friendDisplayName || 'Friend',
           photoURL: data.friendPhotoURL || '',
-          rating: data.friendRating || 1200,
+          rating: typeof data.friendRating === 'number' ? data.friendRating : 1200,
           addedAt: data.addedAt || new Date().toISOString(),
         });
       });
@@ -220,9 +242,9 @@ export function subscribeToFriendRequests(
         incomingList.push({
           id: docSnap.id,
           fromUserId: d.fromUserId,
-          fromDisplayName: d.fromDisplayName,
+          fromDisplayName: d.fromDisplayName || 'Player',
           fromPhotoURL: d.fromPhotoURL,
-          fromRating: d.fromRating,
+          fromRating: d.fromRating || 1200,
           toUserId: d.toUserId,
           status: d.status,
           createdAt: d.createdAt,
@@ -245,9 +267,9 @@ export function subscribeToFriendRequests(
         outgoingList.push({
           id: docSnap.id,
           fromUserId: d.fromUserId,
-          fromDisplayName: d.fromDisplayName,
+          fromDisplayName: d.fromDisplayName || 'Player',
           fromPhotoURL: d.fromPhotoURL,
-          fromRating: d.fromRating,
+          fromRating: d.fromRating || 1200,
           toUserId: d.toUserId,
           status: d.status,
           createdAt: d.createdAt,
@@ -300,7 +322,8 @@ export async function sendFriendRequest(
 }
 
 /**
- * Accepts a friend request and establishes friendship
+ * Accepts a friend request and establishes reciprocal, bidirectional friendship safely.
+ * Validates request ownership and pending state before modifying.
  */
 export async function acceptFriendRequest(request: FriendRequest): Promise<void> {
   const current = auth.currentUser;
@@ -308,45 +331,102 @@ export async function acceptFriendRequest(request: FriendRequest): Promise<void>
     throw new Error('Unauthorized friend request acceptance');
   }
 
+  // Validate current Firestore state
+  const requestRef = doc(db, 'friend_requests', request.id);
+  const snap = await getDoc(requestRef);
+  if (!snap.exists()) {
+    throw new Error('Friend request no longer exists');
+  }
+  const data = snap.data();
+  if (data.status !== 'pending' || data.toUserId !== current.uid) {
+    throw new Error('Friend request is no longer pending or authorized');
+  }
+
   const now = new Date().toISOString();
+  const batch = writeBatch(db);
 
-  await setDoc(
-    doc(db, 'friend_requests', request.id),
-    { status: 'accepted', updatedAt: now },
-    { merge: true }
-  );
+  // 1. Update friend request status to accepted
+  batch.update(requestRef, { status: 'accepted', updatedAt: now });
 
-  await setDoc(doc(db, 'users', current.uid, 'friends', request.fromUserId), {
+  // 2. Add to accepting user's friends list
+  const acceptingUserFriendRef = doc(db, 'users', current.uid, 'friends', request.fromUserId);
+  batch.set(acceptingUserFriendRef, {
     friendId: request.fromUserId,
     friendDisplayName: request.fromDisplayName,
     friendPhotoURL: request.fromPhotoURL || '',
     friendRating: request.fromRating || 1200,
     addedAt: now,
   });
+
+  // 3. Reciprocally add to requesting user's friends list
+  const requestingUserFriendRef = doc(db, 'users', request.fromUserId, 'friends', current.uid);
+  batch.set(requestingUserFriendRef, {
+    friendId: current.uid,
+    friendDisplayName: current.displayName || 'Player',
+    friendPhotoURL: current.photoURL || '',
+    friendRating: 1200,
+    addedAt: now,
+  });
+
+  // Commit atomically! If any single write fails, all changes roll back.
+  await batch.commit();
 }
 
 /**
- * Declines a friend request
+ * Declines a friend request with ownership validation
  */
 export async function declineFriendRequest(requestId: string): Promise<void> {
   const current = auth.currentUser;
-  if (!current) return;
+  if (!current || !requestId) throw new Error('Unauthenticated');
 
-  await setDoc(
-    doc(db, 'friend_requests', requestId),
-    { status: 'declined', updatedAt: new Date().toISOString() },
-    { merge: true }
-  );
+  const requestRef = doc(db, 'friend_requests', requestId);
+  const snap = await getDoc(requestRef);
+  if (!snap.exists() || snap.data()?.toUserId !== current.uid || snap.data()?.status !== 'pending') {
+    throw new Error('Cannot decline: request is not pending or unauthorized');
+  }
+
+  await updateDoc(requestRef, {
+    status: 'declined',
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 /**
- * Removes a friend from user's friends list
+ * Cancels an outgoing pending friend request with ownership validation
+ */
+export async function cancelFriendRequest(requestId: string): Promise<void> {
+  const current = auth.currentUser;
+  if (!current || !requestId) throw new Error('Unauthenticated');
+
+  const requestRef = doc(db, 'friend_requests', requestId);
+  const snap = await getDoc(requestRef);
+  if (!snap.exists() || snap.data()?.fromUserId !== current.uid || snap.data()?.status !== 'pending') {
+    throw new Error('Cannot cancel: request is not pending or unauthorized');
+  }
+
+  await updateDoc(requestRef, {
+    status: 'cancelled',
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Removes a friend from user's friends list atomically and reciprocally
  */
 export async function removeFriend(friendId: string): Promise<void> {
   const current = auth.currentUser;
   if (!current || !friendId) return;
 
-  await deleteDoc(doc(db, 'users', current.uid, 'friends', friendId));
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'users', current.uid, 'friends', friendId));
+  batch.delete(doc(db, 'users', friendId, 'friends', current.uid));
+
+  try {
+    await batch.commit();
+  } catch (err) {
+    // Fallback: delete current user's entry if reciprocal batch fails
+    await deleteDoc(doc(db, 'users', current.uid, 'friends', friendId));
+  }
 }
 
 /**
@@ -391,7 +471,8 @@ export function subscribeToDirectMessages(
 }
 
 /**
- * Sends a direct message in a 1-on-1 chat
+ * Sends a direct message in a 1-on-1 chat.
+ * Strictly derives and validates the canonical chatId from authenticated sender + recipient!
  */
 export async function sendDirectMessage(
   chatId: string,
@@ -399,14 +480,18 @@ export async function sendDirectMessage(
   text: string
 ): Promise<void> {
   const current = auth.currentUser;
-  if (!current || !text.trim()) return;
+  if (!current || !recipientId || !text.trim()) return;
+
+  // Derive and validate canonical chatId from authenticated sender + recipient
+  const expectedChatId = getChatId(current.uid, recipientId);
+  const canonicalChatId = chatId === expectedChatId ? chatId : expectedChatId;
 
   const msgId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const msgRef = doc(db, 'direct_chats', chatId, 'messages', msgId);
+  const msgRef = doc(db, 'direct_chats', canonicalChatId, 'messages', msgId);
 
   const payload: DirectMessage = {
     id: msgId,
-    chatId,
+    chatId: canonicalChatId,
     senderId: current.uid,
     senderDisplayName: current.displayName || 'Player',
     senderPhotoURL: current.photoURL || '',
@@ -417,6 +502,22 @@ export async function sendDirectMessage(
   };
 
   await setDoc(msgRef, payload);
+
+  // Keep parent direct_chats metadata up-to-date
+  try {
+    await setDoc(
+      doc(db, 'direct_chats', canonicalChatId),
+      {
+        lastMessage: text.trim().substring(0, 100),
+        lastMessageAt: payload.createdAt,
+        updatedAt: payload.createdAt,
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    // Parent touch failure shouldn't fail message delivery
+    console.debug('Chat parent metadata notice:', err);
+  }
 }
 
 /**
@@ -429,8 +530,13 @@ export async function sendGameChallenge(
   isRated: boolean = true
 ): Promise<GameChallenge> {
   const current = auth.currentUser;
-  if (!current || !challengedUser.userId) {
-    throw new Error('Cannot challenge without authentication');
+  if (!current || !challengedUser.userId || current.uid === challengedUser.userId) {
+    throw new Error('Invalid participants for game challenge');
+  }
+
+  // Validate timeControl
+  if (!timeControl || typeof timeControl.initialSeconds !== 'number' || timeControl.initialSeconds <= 0) {
+    throw new Error('Invalid time control specified for game challenge');
   }
 
   const randomBytes = new Uint8Array(8);
@@ -442,6 +548,12 @@ export async function sendGameChallenge(
   const secureHex = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
   const challengeId = `chal_${Date.now()}_${secureHex.substring(0, 8)}`;
   const roomId = `CHAL-${Date.now().toString(36).toUpperCase()}-${secureHex.toUpperCase()}`;
+
+  // Validate roomId format strictly
+  if (!/^CHAL-[A-Z0-9]+-[A-F0-9]+$/.test(roomId)) {
+    throw new Error('Malformed room identifier');
+  }
+
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 120000).toISOString();
 
@@ -564,20 +676,46 @@ export function subscribeToOutgoingChallenge(
 }
 
 /**
- * Responds to a game challenge (accept, decline, cancel)
+ * Responds to a game challenge (accept, decline, cancel) with ownership and state verification
  */
 export async function respondToGameChallenge(
   challengeId: string,
   action: 'accepted' | 'declined' | 'cancelled'
 ): Promise<void> {
   const current = auth.currentUser;
-  if (!current || !challengeId) return;
+  if (!current || !challengeId) throw new Error('Unauthenticated challenge response');
 
-  await setDoc(
-    doc(db, 'game_challenges', challengeId),
-    { status: action, updatedAt: new Date().toISOString() },
-    { merge: true }
-  );
+  const challengeRef = doc(db, 'game_challenges', challengeId);
+  const snap = await getDoc(challengeRef);
+  if (!snap.exists()) {
+    throw new Error('Game challenge no longer exists');
+  }
+
+  const data = snap.data();
+  if (data.status !== 'pending') {
+    throw new Error(`Cannot ${action}: challenge is already ${data.status}`);
+  }
+
+  // Check expiration
+  if (data.expiresAt && new Date(data.expiresAt).getTime() < Date.now()) {
+    throw new Error('Challenge has expired');
+  }
+
+  // Validate authorized role for action
+  if (action === 'accepted' || action === 'declined') {
+    if (data.challengedId !== current.uid) {
+      throw new Error('Only the challenged recipient can accept or decline this challenge');
+    }
+  } else if (action === 'cancelled') {
+    if (data.challengerId !== current.uid) {
+      throw new Error('Only the challenger can cancel this challenge');
+    }
+  }
+
+  await updateDoc(challengeRef, {
+    status: action,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 /**
@@ -594,15 +732,15 @@ export async function searchCommunityUsers(searchQuery: string): Promise<FriendU
 
     snap.forEach((docSnap) => {
       const data = docSnap.data();
-      const name = (data.displayName || '').toLowerCase();
+      const name = (data.displayName || data.username || '').toLowerCase();
       const uid = data.userId || docSnap.id;
 
       if (name.includes(clean) || uid.toLowerCase().includes(clean)) {
         results.push({
           userId: uid,
-          displayName: data.displayName || 'Player',
+          displayName: data.displayName || data.username || 'Player',
           photoURL: data.photoURL || '',
-          rating: data.multiplayerRating || 1200,
+          rating: typeof data.multiplayerRating === 'number' ? data.multiplayerRating : (Number(data.rating) || 1200),
           addedAt: data.updatedAt || new Date().toISOString(),
         });
       }
