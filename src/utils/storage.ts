@@ -1,29 +1,23 @@
 /**
- * Firebase Firestore Data Persistence for Chess Stats, Preferences, and Game History
- * Replaces pure local storage with Firebase Cloud Firestore.
+ * Local & Firestore Session Storage & Atomic State Manager
+ * 
+ * Features:
+ * - Atomic account-switching and session generation tracking.
+ * - Zero cross-account data leakage.
+ * - Invalidation of stale in-flight Firestore promises after logout/login.
+ * - Non-stale getActiveFirebaseUserId() bound strictly to auth.currentUser.
  */
 
-import { calculateEloUpdate, INITIAL_RATING, EloCalculationResult } from './eloRating';
-import { 
-  saveUserStatsToFirestore, 
-  loadUserStatsFromFirestore, 
-  saveUserPreferencesToFirestore, 
-  loadUserPreferencesFromFirestore, 
+import {
+  saveUserStatsToFirestore,
+  loadUserStatsFromFirestore,
+  saveUserPreferencesToFirestore,
+  loadUserPreferencesFromFirestore,
   recordMultiplayerGameTransaction,
-  loadMatchHistoryFromFirestore
+  loadMatchHistoryFromFirestore,
 } from '../firebase/firestoreService';
+import { INITIAL_RATING, calculateEloUpdate } from './eloRating';
 import { auth } from '../firebase/config';
-
-export interface UserPreferences {
-  boardTheme: 'cobalt' | 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble';
-  stockfishLevel: number; // 0 to 20 (0 = beginner ~600, 20 = GM ~2800)
-  engineThinkingSeconds: number; // 7 to 10 seconds for deep analysis
-  soundEnabled: boolean;
-  showCoordinates: boolean;
-  showLegalMoves: boolean;
-  autoQueen: boolean;
-  defaultTimeControl: string; // '3-0', '5-0', '10-0', 'unlimited'
-}
 
 export interface SavedGame {
   id: string;
@@ -37,18 +31,21 @@ export interface SavedGame {
 
 export interface MultiplayerMatchRecord {
   id: string;
-  roomId: string;
-  date: string;
-  result: 'win' | 'loss' | 'draw';
+  roomId?: string;
   opponentName: string;
   opponentRating: number;
+  result: 'win' | 'loss' | 'draw';
   ratingBefore: number;
   ratingAfter: number;
   ratingDelta: number;
-  isProvisional: boolean;
-  matchNumber: number;
+  isProvisional?: boolean;
+  matchNumber?: number;
+  playerColor?: 'w' | 'b';
   movesCount: number;
+  timeControl?: string;
   pgn: string;
+  date?: string;
+  createdAt: string;
 }
 
 export interface UserStats {
@@ -60,8 +57,8 @@ export interface UserStats {
   puzzlesSolved: number;
   history: SavedGame[];
 
-  // Multiplayer Elo Rating & Placement Progression
-  multiplayerRating: number; // Starts at 800 Elo
+  // Multiplayer Elo stats: starts at 800 Elo
+  multiplayerRating: number;
   multiplayerGamesPlayed: number;
   multiplayerWins: number;
   multiplayerLosses: number;
@@ -70,15 +67,26 @@ export interface UserStats {
   multiplayerHistory: MultiplayerMatchRecord[];
 }
 
+export interface UserPreferences {
+  boardTheme: 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble' | 'cobalt';
+  soundEnabled: boolean;
+  showCoordinates: boolean;
+  showLegalMoves: boolean;
+  autoQueen: boolean;
+  defaultTimeControl: string;
+  stockfishLevel?: number;
+  engineThinkingSeconds?: number;
+}
+
 export const DEFAULT_PREFERENCES: UserPreferences = {
-  boardTheme: 'cobalt',
-  stockfishLevel: 10,
-  engineThinkingSeconds: 8,
+  boardTheme: 'emerald',
   soundEnabled: true,
   showCoordinates: true,
   showLegalMoves: true,
   autoQueen: false,
   defaultTimeControl: '5-0',
+  stockfishLevel: 10,
+  engineThinkingSeconds: 2,
 };
 
 export const DEFAULT_STATS: UserStats = {
@@ -100,27 +108,53 @@ export const DEFAULT_STATS: UserStats = {
   multiplayerHistory: [],
 };
 
-// In-memory active session cache
+// Monotonic Session Generation Counter for atomic account isolation
+let currentSessionGeneration = 0;
+let currentActiveUserId: string | null = null;
 let inMemoryStats: UserStats = { ...DEFAULT_STATS };
 let inMemoryPrefs: UserPreferences = { ...DEFAULT_PREFERENCES };
-let currentActiveUserId: string | null = null;
 
+/**
+ * Returns current authenticated Firebase user UID.
+ * Strictly guarantees that if no Firebase user is authenticated, it returns null and clears cache.
+ */
 export function getActiveFirebaseUserId(): string | null {
-  if (auth.currentUser?.uid) {
-    currentActiveUserId = auth.currentUser.uid;
-    return auth.currentUser.uid;
+  const current = auth.currentUser;
+  if (!current) {
+    currentActiveUserId = null;
+    return null;
   }
-  return currentActiveUserId;
+  currentActiveUserId = current.uid;
+  return current.uid;
 }
 
-export function setActiveFirebaseUserId(uid: string) {
+export function setActiveFirebaseUserId(uid: string | null) {
+  if (!uid || !auth.currentUser || auth.currentUser.uid !== uid) {
+    currentActiveUserId = null;
+    return;
+  }
   currentActiveUserId = uid;
 }
 
+/**
+ * Atomically clears all in-memory stats, preferences, and invalidates all in-flight async session requests.
+ */
 export function clearUserSessionData() {
+  currentSessionGeneration++;
+  currentActiveUserId = null;
   inMemoryStats = { ...DEFAULT_STATS };
   inMemoryPrefs = { ...DEFAULT_PREFERENCES };
-  currentActiveUserId = null;
+}
+
+/**
+ * Starts a new isolated session generation for the target user.
+ */
+export function beginUserSession(userId: string): number {
+  currentSessionGeneration++;
+  currentActiveUserId = userId;
+  inMemoryStats = { ...DEFAULT_STATS };
+  inMemoryPrefs = { ...DEFAULT_PREFERENCES };
+  return currentSessionGeneration;
 }
 
 export function loadPreferences(): UserPreferences {
@@ -130,7 +164,7 @@ export function loadPreferences(): UserPreferences {
 export function savePreferences(prefs: UserPreferences) {
   inMemoryPrefs = { ...prefs };
   const uid = getActiveFirebaseUserId();
-  if (uid && auth.currentUser) {
+  if (uid && auth.currentUser && auth.currentUser.uid === uid) {
     saveUserPreferencesToFirestore(uid, prefs).catch((err) => {
       console.warn('Firebase preferences save notice:', err);
     });
@@ -142,12 +176,19 @@ export function loadUserStats(): UserStats {
 }
 
 /**
- * Initializes and syncs stats from Firebase Firestore for the user
+ * Initializes and syncs stats from Firebase Firestore for the user.
+ * Discards any results if the session generation or active UID has changed while requests were in-flight.
  */
-export async function syncUserDataFromFirestore(userId: string): Promise<{ stats: UserStats; prefs: UserPreferences }> {
-  if (!userId || !auth.currentUser) {
-    return { stats: inMemoryStats, prefs: inMemoryPrefs };
+export async function syncUserDataFromFirestore(
+  userId: string
+): Promise<{ stats: UserStats; prefs: UserPreferences }> {
+  if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) {
+    clearUserSessionData();
+    return { stats: { ...DEFAULT_STATS }, prefs: { ...DEFAULT_PREFERENCES } };
   }
+
+  const sessionGen = currentSessionGeneration;
+
   try {
     const [remoteStats, remotePrefs, remoteMatches] = await Promise.all([
       loadUserStatsFromFirestore(userId),
@@ -155,23 +196,37 @@ export async function syncUserDataFromFirestore(userId: string): Promise<{ stats
       loadMatchHistoryFromFirestore(userId),
     ]);
 
+    // Discard stale response if session changed or user logged out/switched
+    if (
+      sessionGen !== currentSessionGeneration ||
+      !auth.currentUser ||
+      auth.currentUser.uid !== userId
+    ) {
+      return { stats: inMemoryStats, prefs: inMemoryPrefs };
+    }
+
     if (remoteStats) {
       inMemoryStats = {
-        ...inMemoryStats,
+        ...DEFAULT_STATS,
         ...remoteStats,
-        multiplayerHistory: remoteMatches && remoteMatches.length > 0 ? remoteMatches : inMemoryStats.multiplayerHistory,
+        multiplayerHistory:
+          remoteMatches && remoteMatches.length > 0
+            ? remoteMatches
+            : remoteStats.multiplayerHistory || [],
       };
     } else {
-      // First time user: save initial 800 Elo stats to Firebase
+      // First time user: save clean initial stats to Firestore
+      inMemoryStats = { ...DEFAULT_STATS };
       await saveUserStatsToFirestore(userId, inMemoryStats);
     }
 
     if (remotePrefs) {
       inMemoryPrefs = {
-        ...inMemoryPrefs,
+        ...DEFAULT_PREFERENCES,
         ...remotePrefs,
       };
     } else {
+      inMemoryPrefs = { ...DEFAULT_PREFERENCES };
       await saveUserPreferencesToFirestore(userId, inMemoryPrefs);
     }
   } catch (error) {
@@ -195,7 +250,12 @@ export function recordGameResult(
 
   const newGame: SavedGame = {
     id: `game-${Date.now()}`,
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    date: new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
     result,
     opponent,
     movesCount,
@@ -207,7 +267,7 @@ export function recordGameResult(
   if (inMemoryStats.history.length > 50) inMemoryStats.history.pop();
 
   const uid = getActiveFirebaseUserId();
-  if (uid) {
+  if (uid && auth.currentUser && auth.currentUser.uid === uid) {
     saveUserStatsToFirestore(uid, inMemoryStats).catch((err) => {
       console.warn('Firebase stats sync warning:', err);
     });
@@ -221,7 +281,7 @@ export function recordPuzzleSolved(ratingDelta: number): UserStats {
   inMemoryStats.puzzleRating = Math.max(400, inMemoryStats.puzzleRating + ratingDelta);
 
   const uid = getActiveFirebaseUserId();
-  if (uid) {
+  if (uid && auth.currentUser && auth.currentUser.uid === uid) {
     saveUserStatsToFirestore(uid, inMemoryStats).catch((err) => {
       console.warn('Firebase puzzle sync warning:', err);
     });
@@ -238,78 +298,105 @@ export function recordPuzzleSolved(ratingDelta: number): UserStats {
  * - Persists atomically to Firebase Firestore!
  */
 export function recordMultiplayerGameResult(params: {
-  roomId: string;
+  matchId?: string;
+  roomId?: string;
   result: 'win' | 'loss' | 'draw';
   opponentName: string;
   opponentRating?: number;
   movesCount: number;
+  timeControl?: string;
   pgn: string;
+  playerColor?: 'w' | 'b';
   serverRatingDelta?: number;
   serverNewRating?: number;
 }): {
   stats: UserStats;
-  calc: EloCalculationResult;
   oldRating: number;
   newRating: number;
   ratingDelta: number;
+  calc: {
+    isProvisional: boolean;
+    matchesPlayed: number;
+    performanceTier: string;
+  };
 } {
   const currentRating = inMemoryStats.multiplayerRating ?? INITIAL_RATING;
-  const oppRating = params.opponentRating ?? INITIAL_RATING;
-  const gamesBefore = inMemoryStats.multiplayerGamesPlayed ?? 0;
+  const currentGamesPlayed = inMemoryStats.multiplayerGamesPlayed ?? 0;
 
-  // Compute or verify Elo rating update
-  const calc = calculateEloUpdate(currentRating, oppRating, params.result, gamesBefore);
+  const localCalc = calculateEloUpdate(
+    currentRating,
+    params.opponentRating ?? 800,
+    params.result,
+    currentGamesPlayed
+  );
 
-  const ratingDelta = typeof params.serverRatingDelta === 'number' ? params.serverRatingDelta : calc.ratingDelta;
-  const newRating = typeof params.serverNewRating === 'number' ? params.serverNewRating : calc.newRating;
+  const newRating = params.serverNewRating !== undefined ? params.serverNewRating : localCalc.newRating;
+  const ratingDelta = params.serverRatingDelta !== undefined ? params.serverRatingDelta : localCalc.ratingDelta;
 
-  // Update stats counters
-  inMemoryStats.multiplayerGamesPlayed = gamesBefore + 1;
+  inMemoryStats.multiplayerGamesPlayed = currentGamesPlayed + 1;
   inMemoryStats.multiplayerRating = newRating;
-  inMemoryStats.multiplayerPeakRating = Math.max(inMemoryStats.multiplayerPeakRating || INITIAL_RATING, newRating);
+  inMemoryStats.multiplayerPeakRating = Math.max(
+    inMemoryStats.multiplayerPeakRating ?? INITIAL_RATING,
+    newRating
+  );
 
-  if (params.result === 'win') inMemoryStats.multiplayerWins += 1;
-  else if (params.result === 'loss') inMemoryStats.multiplayerLosses += 1;
-  else inMemoryStats.multiplayerDraws += 1;
+  if (params.result === 'win') {
+    inMemoryStats.multiplayerWins = (inMemoryStats.multiplayerWins ?? 0) + 1;
+  } else if (params.result === 'loss') {
+    inMemoryStats.multiplayerLosses = (inMemoryStats.multiplayerLosses ?? 0) + 1;
+  } else {
+    inMemoryStats.multiplayerDraws = (inMemoryStats.multiplayerDraws ?? 0) + 1;
+  }
+
+  const cleanMatchId = params.matchId || `match_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   const matchRecord: MultiplayerMatchRecord = {
-    id: `mp-${Date.now()}`,
+    id: cleanMatchId,
     roomId: params.roomId,
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    opponentName: params.opponentName,
+    opponentRating: params.opponentRating ?? 800,
     result: params.result,
-    opponentName: params.opponentName || 'Opponent',
-    opponentRating: oppRating,
     ratingBefore: currentRating,
     ratingAfter: newRating,
     ratingDelta,
-    isProvisional: calc.isProvisional,
-    matchNumber: inMemoryStats.multiplayerGamesPlayed,
+    playerColor: params.playerColor,
     movesCount: params.movesCount,
+    timeControl: params.timeControl,
     pgn: params.pgn,
+    createdAt: new Date().toISOString(),
   };
 
+  if (!inMemoryStats.multiplayerHistory) {
+    inMemoryStats.multiplayerHistory = [];
+  }
   inMemoryStats.multiplayerHistory.unshift(matchRecord);
-  if (inMemoryStats.multiplayerHistory.length > 50) inMemoryStats.multiplayerHistory.pop();
+  if (inMemoryStats.multiplayerHistory.length > 50) {
+    inMemoryStats.multiplayerHistory.pop();
+  }
 
   // Persist atomically to Firebase Firestore using atomic transaction
   const uid = getActiveFirebaseUserId();
-  if (uid) {
+  if (uid && auth.currentUser && auth.currentUser.uid === uid) {
     recordMultiplayerGameTransaction(uid, matchRecord, {
       result: params.result,
       ratingBefore: currentRating,
       ratingAfter: newRating,
       ratingDelta,
-      isProvisional: calc.isProvisional,
+      isProvisional: localCalc.isProvisional,
     }).catch((err) => {
-      console.warn('Firebase atomic multiplayer transaction error:', err);
+      console.warn('Firebase atomic match transaction warning:', err);
     });
   }
 
   return {
     stats: { ...inMemoryStats },
-    calc,
     oldRating: currentRating,
     newRating,
     ratingDelta,
+    calc: {
+      isProvisional: localCalc.isProvisional,
+      matchesPlayed: inMemoryStats.multiplayerGamesPlayed,
+      performanceTier: localCalc.performanceTier,
+    },
   };
 }

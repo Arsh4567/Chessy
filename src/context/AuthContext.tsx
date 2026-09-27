@@ -15,7 +15,7 @@ import {
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase/config';
 import { syncUserProfileToFirestore } from '../firebase/firestoreService';
-import { clearUserSessionData } from '../utils/storage';
+import { clearUserSessionData, beginUserSession } from '../utils/storage';
 import { getFriendlyAuthErrorMessage } from '../firebase/authErrors';
 
 export type AuthModalMode = 'login' | 'signup' | 'forgot';
@@ -58,7 +58,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<AuthModalMode>('login');
 
-  const isSyncingRef = useRef<boolean>(false);
+  // UID-specific and monotonic session tracker
+  const authSessionCounterRef = useRef<number>(0);
+  const currentSyncingUidRef = useRef<string | null>(null);
 
   const openAuthModal = useCallback((mode: AuthModalMode = 'login') => {
     setAuthModalMode(mode);
@@ -72,22 +74,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Listen to Firebase auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
+      authSessionCounterRef.current++;
+      const currentSessionId = authSessionCounterRef.current;
 
-      if (currentUser && !isSyncingRef.current) {
-        isSyncingRef.current = true;
-        try {
-          await syncUserProfileToFirestore({
-            uid: currentUser.uid,
-            displayName: currentUser.displayName || (currentUser.isAnonymous ? 'Guest Grandmaster' : 'Chess Player'),
-            photoURL: currentUser.photoURL || '',
-            email: currentUser.email || null,
-          });
-        } catch (e) {
-          console.warn('Profile sync notice:', e);
-        } finally {
-          isSyncingRef.current = false;
+      if (!currentUser) {
+        currentSyncingUidRef.current = null;
+        clearUserSessionData();
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      // Isolate in-memory storage session for the new UID
+      beginUserSession(currentUser.uid);
+      currentSyncingUidRef.current = currentUser.uid;
+
+      // Keep loading true until essential profile initialization is complete
+      try {
+        await syncUserProfileToFirestore({
+          uid: currentUser.uid,
+          displayName: currentUser.displayName || (currentUser.isAnonymous ? 'Guest Grandmaster' : 'Chess Player'),
+          photoURL: currentUser.photoURL || '',
+          email: currentUser.email || null,
+        });
+      } catch (e) {
+        console.warn('Profile sync notice during auth resolution:', e);
+      } finally {
+        // Only set state if this remains the latest session and UID
+        if (currentSessionId === authSessionCounterRef.current) {
+          setUser(currentUser);
+          setLoading(false);
         }
       }
     });
@@ -105,6 +121,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
+      clearUserSessionData();
       await signInWithEmailAndPassword(auth, cleanEmail, password);
       closeAuthModal();
     } catch (error: any) {
@@ -115,6 +132,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   /**
    * Registers a new account with Email and Password.
    * If current user is an anonymous guest, links the credentials so guest stats are preserved.
+   * If email is already in use by another account, throws a clear error so guest data is never silently lost.
    */
   const signUpWithEmail = async (email: string, password: string, displayName?: string) => {
     const cleanEmail = email.trim();
@@ -127,29 +145,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Password must be at least 6 characters.');
     }
 
-    try {
-      const currentUser = auth.currentUser;
+    const currentUser = auth.currentUser;
 
-      if (currentUser && currentUser.isAnonymous) {
-        // Upgrade / link anonymous session to preserve guest history
-        try {
-          const credential = EmailAuthProvider.credential(cleanEmail, password);
-          const result = await linkWithCredential(currentUser, credential);
-          if (cleanName) {
-            await updateProfile(result.user, { displayName: cleanName });
-          }
-          closeAuthModal();
-          return;
-        } catch (linkError: any) {
-          // If already in use, fall back to standard create / sign in
-          const code = linkError?.code || '';
-          if (code !== 'auth/credential-already-in-use' && code !== 'auth/email-already-in-use') {
-            throw linkError;
-          }
+    if (currentUser && currentUser.isAnonymous) {
+      try {
+        const credential = EmailAuthProvider.credential(cleanEmail, password);
+        const result = await linkWithCredential(currentUser, credential);
+        if (cleanName) {
+          await updateProfile(result.user, { displayName: cleanName });
         }
+        closeAuthModal();
+        return;
+      } catch (linkError: any) {
+        const code = linkError?.code || '';
+        if (code === 'auth/email-already-in-use' || code === 'auth/credential-already-in-use') {
+          throw new Error(
+            'This email is already associated with an existing Grandmaster account. To preserve your current guest rating and history, please sign up with a new email address, or sign in directly to switch accounts.'
+          );
+        }
+        throw new Error(getFriendlyAuthErrorMessage(linkError));
       }
+    }
 
-      // Standard new user registration
+    try {
+      clearUserSessionData();
       const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
       if (cleanName) {
         await updateProfile(userCredential.user, { displayName: cleanName });
@@ -163,43 +182,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   /**
    * Signs in with Google Popup.
    * If current user is an anonymous guest, links with Google to preserve guest progress.
+   * If Google account already exists on another user, throws a clear error to avoid silently dropping guest progress.
    */
   const signInWithGoogle = async () => {
-    try {
-      const currentUser = auth.currentUser;
+    const currentUser = auth.currentUser;
 
-      if (currentUser && currentUser.isAnonymous) {
-        try {
-          await linkWithPopup(currentUser, googleProvider);
-          closeAuthModal();
+    if (currentUser && currentUser.isAnonymous) {
+      try {
+        await linkWithPopup(currentUser, googleProvider);
+        closeAuthModal();
+        return;
+      } catch (linkError: any) {
+        const code = linkError?.code || '';
+        if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
           return;
-        } catch (linkError: any) {
-          const code = linkError?.code || '';
-          if (code !== 'auth/credential-already-in-use' && code !== 'auth/email-already-in-use') {
-            if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-              return;
-            }
-            throw linkError;
-          }
         }
+        if (code === 'auth/credential-already-in-use' || code === 'auth/account-exists-with-different-credential') {
+          throw new Error(
+            'This Google account is already linked to an existing profile. To preserve your current guest progress, link with a different account or sign in directly to switch.'
+          );
+        }
+        throw new Error(getFriendlyAuthErrorMessage(linkError));
       }
+    }
 
+    try {
+      clearUserSessionData();
       await signInWithPopup(auth, googleProvider);
       closeAuthModal();
     } catch (error: any) {
       const code = error?.code || '';
       if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        return; // User intentionally closed popup, suppress error
+        return;
       }
       throw new Error(getFriendlyAuthErrorMessage(error));
     }
   };
 
   /**
-   * Explicit Guest sign-in (only called when user clicks "Continue as Guest")
+   * Explicit Guest sign-in.
+   * Rejects if another authenticated (non-guest) session is already active.
    */
   const signInAsGuest = async () => {
+    if (auth.currentUser && !auth.currentUser.isAnonymous) {
+      throw new Error('An authenticated account is already active. Please sign out first to play as guest.');
+    }
+    if (auth.currentUser && auth.currentUser.isAnonymous) {
+      closeAuthModal();
+      return;
+    }
+
     try {
+      clearUserSessionData();
       await signInAnonymously(auth);
       closeAuthModal();
     } catch (error: any) {
@@ -224,12 +258,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
-   * Genuinely signs out the user and clears in-memory session data
+   * Genuinely signs out the user and clears in-memory session data atomically
    */
   const signOutUser = async () => {
     try {
-      await signOut(auth);
+      authSessionCounterRef.current++;
+      currentSyncingUidRef.current = null;
       clearUserSessionData();
+      await signOut(auth);
       setUser(null);
     } catch (error: any) {
       console.error('Sign-out error:', error);

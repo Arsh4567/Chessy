@@ -83,12 +83,17 @@ export default function App() {
     return cleanup;
   }, []);
   useEffect(() => {
-    if (user?.uid) {
-      setActiveFirebaseUserId(user.uid);
-      syncUserDataFromFirestore(user.uid)
+    let isCurrent = true;
+    const currentUid = user?.uid;
+
+    if (currentUid) {
+      setActiveFirebaseUserId(currentUid);
+      syncUserDataFromFirestore(currentUid)
         .then(({ stats: syncedStats, prefs: syncedPrefs }) => {
-          setStats({ ...syncedStats });
-          setPreferences({ ...syncedPrefs });
+          if (isCurrent && user?.uid === currentUid) {
+            setStats({ ...syncedStats });
+            setPreferences({ ...syncedPrefs });
+          }
         })
         .catch((err) => {
           console.warn('Firebase Firestore sync notice:', err);
@@ -99,6 +104,10 @@ export default function App() {
       setStats({ ...DEFAULT_STATS });
       setPreferences({ ...DEFAULT_PREFERENCES });
     }
+
+    return () => {
+      isCurrent = false;
+    };
   }, [user]);
 
 

@@ -355,7 +355,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span>Stockfish Default Level</span>
               </div>
               <span className="text-xs font-mono font-bold text-sky-400">
-                {Math.round(400 + (preferences.stockfishLevel / 20) * 2400)} Elo
+                {Math.round(400 + ((preferences.stockfishLevel ?? 10) / 20) * 2400)} Elo
               </span>
             </div>
             <input
@@ -363,7 +363,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               min="0"
               max="20"
               step="1"
-              value={preferences.stockfishLevel}
+              value={preferences.stockfishLevel ?? 10}
               onChange={(e) => update('stockfishLevel', parseInt(e.target.value, 10))}
               className="w-full accent-sky-400 cursor-pointer h-2 bg-slate-800 rounded-lg"
             />
