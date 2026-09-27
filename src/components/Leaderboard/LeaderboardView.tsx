@@ -1,23 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { INITIAL_BOTS } from '../../utils/mockData';
 import { UserStats } from '../../utils/storage';
 import { BotProfile } from '../../types/chess';
 import { ELO_TIERS, getEloTier, INITIAL_RATING } from '../../utils/eloRating';
+import { subscribeToPublicLeaderboard, LeaderboardEntry } from '../../firebase/firestoreService';
+import { useAuth } from '../../context/AuthContext';
 import { 
   Trophy, 
   Bot, 
   Zap, 
-  Award, 
-  ShieldCheck, 
   Play, 
-  ChevronRight, 
-  Flame, 
   Crown,
   Medal,
-  Star,
   Users,
-  Shield,
-  Sparkles
+  Sparkles,
+  Cloud,
+  ArrowUpRight
 } from 'lucide-react';
 
 interface LeaderboardViewProps {
@@ -34,10 +32,26 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
   onPlayMultiplayer,
 }) => {
   const [activeTab, setActiveTab] = useState<'multiplayer' | 'bots' | 'puzzles'>('multiplayer');
+  const [leaderboardList, setLeaderboardList] = useState<LeaderboardEntry[]>([]);
+  const [isLoadingLb, setIsLoadingLb] = useState<boolean>(true);
+  const { user } = useAuth();
 
   const mpRating = stats.multiplayerRating ?? INITIAL_RATING;
   const mpGames = stats.multiplayerGamesPlayed ?? 0;
   const currentTier = getEloTier(mpRating);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToPublicLeaderboard(
+      (entries) => {
+        setLeaderboardList(entries);
+        setIsLoadingLb(false);
+      },
+      (_err) => {
+        setIsLoadingLb(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   const puzzleTiers = [
     { title: 'Grandmaster Tactics', minRating: 2400, color: 'text-amber-400 border-amber-500/40 bg-amber-500/10', icon: '👑' },
@@ -54,13 +68,13 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
         <div className="space-y-1.5">
           <div className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-amber-400">
             <Trophy className="w-4 h-4" />
-            <span>Grandmaster Ratings, Elo Tiers & Bot Ranks</span>
+            <span>Grandmaster Ratings, Firebase Cloud Ranks & Elo Tiers</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black font-display text-white">
             Leaderboard & Tiers
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 max-w-xl">
-            Climb the multiplayer competitive ladder starting at 800 Elo, conquer the tactical puzzle tiers, or test your prowess against tuned Stockfish bots.
+            Climb the live Firebase multiplayer competitive ladder starting at 800 Elo, conquer tactical puzzle tiers, or challenge tuned Stockfish bots.
           </p>
         </div>
 
@@ -103,7 +117,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
           }`}
         >
           <Users className="w-3.5 h-3.5" />
-          <span>Multiplayer Elo Tiers</span>
+          <span>Multiplayer Cloud Ladder</span>
         </button>
 
         <button
@@ -131,7 +145,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
         </button>
       </div>
 
-      {/* Tab 1: Multiplayer Elo Tiers */}
+      {/* Tab 1: Multiplayer Elo Tiers & Cloud Ladder */}
       {activeTab === 'multiplayer' ? (
         <div className="space-y-6">
           {/* Rules Explanation Card */}
@@ -151,21 +165,137 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
               <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-1">
                 <span className="text-amber-400 font-bold block">2. First 7 Matches (Placement)</span>
                 <p className="text-slate-400 text-[11px] leading-relaxed">
-                  Performance affects rating drastically: <strong>around +100 for win</strong>, <strong>around -100 for loss</strong>, and <strong>0 for draw</strong>.
+                  Drastic volatility: <strong>around +100 for win</strong>, <strong>around -100 for loss</strong>, and <strong>0 for draw</strong>.
                 </p>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-1">
                 <span className="text-sky-400 font-bold block">3. Matches 8+ (Established)</span>
                 <p className="text-slate-400 text-[11px] leading-relaxed">
-                  Rating adjusts with stable precision: <strong>+7 to +8 for win</strong>, <strong>-7 to -8 for loss</strong>, and <strong>0 for draw</strong>.
+                  Stable progression: <strong>+7 to +8 for win</strong>, <strong>-7 to -8 for loss</strong>, and <strong>0 for draw</strong>.
                 </p>
               </div>
             </div>
           </div>
 
+          {/* Real-time Firebase Leaderboard Table */}
+          <div className="p-6 rounded-3xl bg-slate-900/80 border border-slate-800 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Cloud className="w-4 h-4 text-emerald-400" />
+                <span>Live Firebase Cloud Leaderboard</span>
+              </div>
+              <span className="text-xs font-mono text-slate-400">
+                {leaderboardList.length} Registered Players
+              </span>
+            </div>
+
+            {isLoadingLb ? (
+              <div className="py-8 text-center text-slate-400 text-xs font-mono flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+                Loading Cloud Leaderboard from Firebase Firestore...
+              </div>
+            ) : leaderboardList.length === 0 ? (
+              <div className="py-8 text-center space-y-2">
+                <div className="text-slate-400 text-sm">No other players recorded yet on this cloud database.</div>
+                <div className="text-xs text-slate-500 font-mono">
+                  Play your first multiplayer match or sign in with Google to establish your rank!
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 font-mono text-[11px]">
+                      <th className="py-2.5 px-3">Rank</th>
+                      <th className="py-2.5 px-3">Player</th>
+                      <th className="py-2.5 px-3">Tier</th>
+                      <th className="py-2.5 px-3 text-right">Rating</th>
+                      <th className="py-2.5 px-3 text-right">Matches</th>
+                      <th className="py-2.5 px-3 text-right">Record (W-L-D)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-medium">
+                    {leaderboardList.map((entry, idx) => {
+                      const isMe = user?.uid === entry.userId;
+                      const tier = getEloTier(entry.multiplayerRating);
+                      return (
+                        <tr
+                          key={entry.userId}
+                          className={`hover:bg-slate-800/40 transition-colors ${
+                            isMe ? 'bg-sky-500/10 text-white font-bold' : 'text-slate-300'
+                          }`}
+                        >
+                          <td className="py-3 px-3 font-mono font-bold">
+                            {idx === 0 ? (
+                              <span className="text-amber-400 flex items-center gap-1">
+                                <Crown className="w-3.5 h-3.5 fill-amber-400" /> #1
+                              </span>
+                            ) : idx === 1 ? (
+                              <span className="text-slate-300 flex items-center gap-1">
+                                <Medal className="w-3.5 h-3.5 text-slate-300" /> #2
+                              </span>
+                            ) : idx === 2 ? (
+                              <span className="text-amber-600 flex items-center gap-1">
+                                <Medal className="w-3.5 h-3.5 text-amber-600" /> #3
+                              </span>
+                            ) : (
+                              <span>#{idx + 1}</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-2">
+                              {entry.photoURL ? (
+                                <img src={entry.photoURL} alt="" className="w-5 h-5 rounded-full" />
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center text-[10px] text-slate-300">
+                                  {entry.displayName?.charAt(0) || 'P'}
+                                </div>
+                              )}
+                              <span>{entry.displayName}</span>
+                              {isMe && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                                  YOU
+                                </span>
+                              )}
+                              {entry.multiplayerGamesPlayed < 7 && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30" title="Placement Volatility active (Drastic ±100)">
+                                  Placement {entry.multiplayerGamesPlayed}/7
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className="flex items-center gap-1">
+                              <span>{tier.icon}</span>
+                              <span className="text-[11px] text-slate-400">{tier.name}</span>
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono font-bold text-amber-400">
+                            {entry.multiplayerRating} <span className="text-[10px] text-slate-500">Elo</span>
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono text-slate-400">
+                            {entry.multiplayerGamesPlayed}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono text-slate-400">
+                            <span className="text-emerald-400">{entry.multiplayerWins}</span>-
+                            <span className="text-rose-400">{entry.multiplayerLosses}</span>-
+                            <span className="text-slate-400">{entry.multiplayerDraws}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* Elo Tiers Hierarchy */}
           <div className="space-y-3 max-w-4xl mx-auto">
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+              Competitive Elo Tiers
+            </h2>
             {ELO_TIERS.map((tier) => {
               const isCurrent = currentTier.name === tier.name;
               const isAchieved = mpRating >= tier.minRating;
@@ -219,7 +349,6 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
       ) : activeTab === 'bots' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {INITIAL_BOTS.map((bot, index) => {
-            const isUnlocked = stats.gamesPlayed >= index * 2;
             return (
               <div
                 key={bot.id}

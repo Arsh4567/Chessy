@@ -52,6 +52,8 @@ export interface AnalyzedMove {
   isBookMove?: boolean;
   openingName?: string;
   timeSpentSeconds?: number;
+  isVariation?: boolean;
+  branchFromIndex?: number;
 }
 
 export interface AnalyzedGame {

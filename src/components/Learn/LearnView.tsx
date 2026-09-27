@@ -7,6 +7,7 @@ import { LichessMasters } from '../Analysis/LichessMasters';
 import { LichessData, fetchLichessData } from '../../utils/lichessExplorer';
 import { stockfish, StockfishEvaluation } from '../../utils/stockfishWorker';
 import { OpeningExplorer } from './OpeningExplorer';
+import { RepertoireTrainer } from './Repertoire/RepertoireTrainer';
 import { 
   BookOpen, 
   Search, 
@@ -15,7 +16,9 @@ import {
   ChevronRight, 
   Cpu,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Flame,
+  Bookmark
 } from 'lucide-react';
 
 interface LearnViewProps {
@@ -27,8 +30,8 @@ export const LearnView: React.FC<LearnViewProps> = ({
   onStartGameWithOpening,
   onAnalyzeOpening,
 }) => {
-  // Learn Sub-tab: 'explorer' (Interactive Opening Explorer) vs 'encyclopedia' (Curated Theory Library)
-  const [activeLearnTab, setActiveLearnTab] = useState<'explorer' | 'encyclopedia'>('explorer');
+  // Learn Sub-tab: 'repertoire' (SRS Repertoire Builder) vs 'explorer' (Interactive Opening Explorer) vs 'encyclopedia' (Curated Theory Library)
+  const [activeLearnTab, setActiveLearnTab] = useState<'repertoire' | 'explorer' | 'encyclopedia'>('repertoire');
   const [explorerInitialFen, setExplorerInitialFen] = useState<string | undefined>(undefined);
 
   // Encyclopedia states
@@ -157,7 +160,24 @@ export const LearnView: React.FC<LearnViewProps> = ({
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-in fade-in duration-300">
       {/* Top Mode Segmented Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-2 sm:p-2.5 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-lg">
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-950 border border-slate-800/80">
+        <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-950 border border-slate-800/80">
+          <button
+            onClick={() => setActiveLearnTab('repertoire')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              activeLearnTab === 'repertoire'
+                ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Bookmark className="w-4 h-4" />
+            <span>Repertoire & Spaced Repetition</span>
+            <span className={`px-1.5 py-0.2 rounded text-[10px] ${
+              activeLearnTab === 'repertoire' ? 'bg-slate-950/20 text-slate-950 font-black' : 'bg-amber-500/20 text-amber-300'
+            }`}>
+              SRS Flashcard
+            </span>
+          </button>
+
           <button
             onClick={() => setActiveLearnTab('explorer')}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
@@ -194,20 +214,27 @@ export const LearnView: React.FC<LearnViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 px-3 text-xs text-slate-400">
-          <Layers className="w-3.5 h-3.5 text-sky-400" />
-          <span>FIDE Master Database & Lichess Live Stats</span>
+          <Layers className="w-3.5 h-3.5 text-amber-400" />
+          <span>SM-2 Memory Retention Engine</span>
         </div>
       </div>
 
-      {/* Tab 1: Opening Explorer Component */}
-      {activeLearnTab === 'explorer' ? (
+      {/* Tab 1: Repertoire & Spaced Repetition Trainer */}
+      {activeLearnTab === 'repertoire' && (
+        <RepertoireTrainer onAnalyzeFen={onAnalyzeOpening} />
+      )}
+
+      {/* Tab 2: Opening Explorer Component */}
+      {activeLearnTab === 'explorer' && (
         <OpeningExplorer
           initialFen={explorerInitialFen}
           onAnalyzeOpening={onAnalyzeOpening}
           onPracticeOpening={onStartGameWithOpening}
         />
-      ) : (
-        /* Tab 2: Opening Theory & Encyclopedia */
+      )}
+
+      {/* Tab 3: Opening Theory & Encyclopedia */}
+      {activeLearnTab === 'encyclopedia' && (
         <div className="space-y-6">
           {/* Encyclopedia Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl">

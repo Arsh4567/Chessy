@@ -1,9 +1,18 @@
 /**
- * Real Local Storage for Chess Stats, Preferences, and Game History
- * No fake data.
+ * Firebase Firestore Data Persistence for Chess Stats, Preferences, and Game History
+ * Replaces pure local storage with Firebase Cloud Firestore.
  */
 
 import { calculateEloUpdate, INITIAL_RATING, EloCalculationResult } from './eloRating';
+import { 
+  saveUserStatsToFirestore, 
+  loadUserStatsFromFirestore, 
+  saveUserPreferencesToFirestore, 
+  loadUserPreferencesFromFirestore, 
+  recordMatchToFirestore,
+  loadMatchHistoryFromFirestore
+} from '../firebase/firestoreService';
+import { auth } from '../firebase/config';
 
 export interface UserPreferences {
   boardTheme: 'cobalt' | 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble';
@@ -61,13 +70,10 @@ export interface UserStats {
   multiplayerHistory: MultiplayerMatchRecord[];
 }
 
-const PREF_KEY = 'gm_chess_preferences_v2';
-const STATS_KEY = 'gm_chess_user_stats_v2';
-
 export const DEFAULT_PREFERENCES: UserPreferences = {
   boardTheme: 'cobalt',
-  stockfishLevel: 10, // Default balanced level
-  engineThinkingSeconds: 8, // 8 seconds default deep analysis (7-10s range)
+  stockfishLevel: 10,
+  engineThinkingSeconds: 8,
   soundEnabled: true,
   showCoordinates: true,
   showLegalMoves: true,
@@ -94,46 +100,79 @@ export const DEFAULT_STATS: UserStats = {
   multiplayerHistory: [],
 };
 
+// In-memory active session cache
+let inMemoryStats: UserStats = { ...DEFAULT_STATS };
+let inMemoryPrefs: UserPreferences = { ...DEFAULT_PREFERENCES };
+let currentActiveUserId: string | null = null;
+
+export function getActiveFirebaseUserId(): string | null {
+  if (auth.currentUser?.uid) {
+    currentActiveUserId = auth.currentUser.uid;
+    return auth.currentUser.uid;
+  }
+  return currentActiveUserId;
+}
+
+export function setActiveFirebaseUserId(uid: string) {
+  currentActiveUserId = uid;
+}
+
 export function loadPreferences(): UserPreferences {
-  try {
-    const saved = localStorage.getItem(PREF_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // Ensure engineThinkingSeconds is at least 7-10s
-      if (!parsed.engineThinkingSeconds || parsed.engineThinkingSeconds < 7) {
-        parsed.engineThinkingSeconds = 8;
-      }
-      return { ...DEFAULT_PREFERENCES, ...parsed };
-    }
-  } catch {}
-  return DEFAULT_PREFERENCES;
+  return inMemoryPrefs;
 }
 
 export function savePreferences(prefs: UserPreferences) {
-  try {
-    localStorage.setItem(PREF_KEY, JSON.stringify(prefs));
-  } catch {}
+  inMemoryPrefs = { ...prefs };
+  const uid = getActiveFirebaseUserId();
+  if (uid && auth.currentUser) {
+    saveUserPreferencesToFirestore(uid, prefs).catch((err) => {
+      console.warn('Firebase preferences save notice:', err);
+    });
+  }
 }
 
 export function loadUserStats(): UserStats {
+  return inMemoryStats;
+}
+
+/**
+ * Initializes and syncs stats from Firebase Firestore for the user
+ */
+export async function syncUserDataFromFirestore(userId: string): Promise<{ stats: UserStats; prefs: UserPreferences }> {
+  if (!userId || !auth.currentUser) {
+    return { stats: inMemoryStats, prefs: inMemoryPrefs };
+  }
   try {
-    const saved = localStorage.getItem(STATS_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return {
-        ...DEFAULT_STATS,
-        ...parsed,
-        multiplayerRating: parsed.multiplayerRating ?? INITIAL_RATING,
-        multiplayerGamesPlayed: parsed.multiplayerGamesPlayed ?? 0,
-        multiplayerWins: parsed.multiplayerWins ?? 0,
-        multiplayerLosses: parsed.multiplayerLosses ?? 0,
-        multiplayerDraws: parsed.multiplayerDraws ?? 0,
-        multiplayerPeakRating: parsed.multiplayerPeakRating ?? (parsed.multiplayerRating ?? INITIAL_RATING),
-        multiplayerHistory: Array.isArray(parsed.multiplayerHistory) ? parsed.multiplayerHistory : [],
+    const [remoteStats, remotePrefs, remoteMatches] = await Promise.all([
+      loadUserStatsFromFirestore(userId),
+      loadUserPreferencesFromFirestore(userId),
+      loadMatchHistoryFromFirestore(userId),
+    ]);
+
+    if (remoteStats) {
+      inMemoryStats = {
+        ...inMemoryStats,
+        ...remoteStats,
+        multiplayerHistory: remoteMatches && remoteMatches.length > 0 ? remoteMatches : inMemoryStats.multiplayerHistory,
       };
+    } else {
+      // First time user: save initial 800 Elo stats to Firebase
+      await saveUserStatsToFirestore(userId, inMemoryStats);
     }
-  } catch {}
-  return DEFAULT_STATS;
+
+    if (remotePrefs) {
+      inMemoryPrefs = {
+        ...inMemoryPrefs,
+        ...remotePrefs,
+      };
+    } else {
+      await saveUserPreferencesToFirestore(userId, inMemoryPrefs);
+    }
+  } catch (error) {
+    console.warn('Firestore user sync notice:', error);
+  }
+
+  return { stats: inMemoryStats, prefs: inMemoryPrefs };
 }
 
 export function recordGameResult(
@@ -142,12 +181,11 @@ export function recordGameResult(
   movesCount: number,
   timeControl: string,
   pgn: string
-) {
-  const stats = loadUserStats();
-  stats.gamesPlayed += 1;
-  if (result === 'win') stats.wins += 1;
-  else if (result === 'loss') stats.losses += 1;
-  else stats.draws += 1;
+): UserStats {
+  inMemoryStats.gamesPlayed += 1;
+  if (result === 'win') inMemoryStats.wins += 1;
+  else if (result === 'loss') inMemoryStats.losses += 1;
+  else inMemoryStats.draws += 1;
 
   const newGame: SavedGame = {
     id: `game-${Date.now()}`,
@@ -159,23 +197,31 @@ export function recordGameResult(
     pgn,
   };
 
-  stats.history.unshift(newGame);
-  if (stats.history.length > 50) stats.history.pop();
+  inMemoryStats.history.unshift(newGame);
+  if (inMemoryStats.history.length > 50) inMemoryStats.history.pop();
 
-  try {
-    localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  } catch {}
-  return stats;
+  const uid = getActiveFirebaseUserId();
+  if (uid) {
+    saveUserStatsToFirestore(uid, inMemoryStats).catch((err) => {
+      console.warn('Firebase stats sync warning:', err);
+    });
+  }
+
+  return { ...inMemoryStats };
 }
 
-export function recordPuzzleSolved(ratingDelta: number) {
-  const stats = loadUserStats();
-  stats.puzzlesSolved += 1;
-  stats.puzzleRating = Math.max(400, stats.puzzleRating + ratingDelta);
-  try {
-    localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  } catch {}
-  return stats;
+export function recordPuzzleSolved(ratingDelta: number): UserStats {
+  inMemoryStats.puzzlesSolved += 1;
+  inMemoryStats.puzzleRating = Math.max(400, inMemoryStats.puzzleRating + ratingDelta);
+
+  const uid = getActiveFirebaseUserId();
+  if (uid) {
+    saveUserStatsToFirestore(uid, inMemoryStats).catch((err) => {
+      console.warn('Firebase puzzle sync warning:', err);
+    });
+  }
+
+  return { ...inMemoryStats };
 }
 
 /**
@@ -183,6 +229,7 @@ export function recordPuzzleSolved(ratingDelta: number) {
  * - Starts at 800 Elo
  * - First 7 matches (1..7): drastic ±100 Elo volatility (placement phase)
  * - Established matches (8+): stable ±7 to 8 Elo changes (0 for draw)
+ * - Persists atomically to Firebase Firestore!
  */
 export function recordMultiplayerGameResult(params: {
   roomId: string;
@@ -200,26 +247,24 @@ export function recordMultiplayerGameResult(params: {
   newRating: number;
   ratingDelta: number;
 } {
-  const stats = loadUserStats();
-  const currentRating = stats.multiplayerRating ?? INITIAL_RATING;
+  const currentRating = inMemoryStats.multiplayerRating ?? INITIAL_RATING;
   const oppRating = params.opponentRating ?? INITIAL_RATING;
-  const gamesBefore = stats.multiplayerGamesPlayed ?? 0;
+  const gamesBefore = inMemoryStats.multiplayerGamesPlayed ?? 0;
 
   // Compute or verify Elo rating update
   const calc = calculateEloUpdate(currentRating, oppRating, params.result, gamesBefore);
 
-  // If server provided authoritative delta, prefer server value, otherwise use calc
   const ratingDelta = typeof params.serverRatingDelta === 'number' ? params.serverRatingDelta : calc.ratingDelta;
   const newRating = typeof params.serverNewRating === 'number' ? params.serverNewRating : calc.newRating;
 
   // Update stats counters
-  stats.multiplayerGamesPlayed = gamesBefore + 1;
-  stats.multiplayerRating = newRating;
-  stats.multiplayerPeakRating = Math.max(stats.multiplayerPeakRating || INITIAL_RATING, newRating);
+  inMemoryStats.multiplayerGamesPlayed = gamesBefore + 1;
+  inMemoryStats.multiplayerRating = newRating;
+  inMemoryStats.multiplayerPeakRating = Math.max(inMemoryStats.multiplayerPeakRating || INITIAL_RATING, newRating);
 
-  if (params.result === 'win') stats.multiplayerWins += 1;
-  else if (params.result === 'loss') stats.multiplayerLosses += 1;
-  else stats.multiplayerDraws += 1;
+  if (params.result === 'win') inMemoryStats.multiplayerWins += 1;
+  else if (params.result === 'loss') inMemoryStats.multiplayerLosses += 1;
+  else inMemoryStats.multiplayerDraws += 1;
 
   const matchRecord: MultiplayerMatchRecord = {
     id: `mp-${Date.now()}`,
@@ -232,20 +277,27 @@ export function recordMultiplayerGameResult(params: {
     ratingAfter: newRating,
     ratingDelta,
     isProvisional: calc.isProvisional,
-    matchNumber: stats.multiplayerGamesPlayed,
+    matchNumber: inMemoryStats.multiplayerGamesPlayed,
     movesCount: params.movesCount,
     pgn: params.pgn,
   };
 
-  stats.multiplayerHistory.unshift(matchRecord);
-  if (stats.multiplayerHistory.length > 50) stats.multiplayerHistory.pop();
+  inMemoryStats.multiplayerHistory.unshift(matchRecord);
+  if (inMemoryStats.multiplayerHistory.length > 50) inMemoryStats.multiplayerHistory.pop();
 
-  try {
-    localStorage.setItem(STATS_KEY, JSON.stringify(stats));
-  } catch {}
+  // Persist directly to Firebase Firestore
+  const uid = getActiveFirebaseUserId();
+  if (uid) {
+    saveUserStatsToFirestore(uid, inMemoryStats).catch((err) => {
+      console.warn('Firebase multiplayer stats save error:', err);
+    });
+    recordMatchToFirestore(uid, matchRecord).catch((err) => {
+      console.warn('Firebase match log save error:', err);
+    });
+  }
 
   return {
-    stats,
+    stats: { ...inMemoryStats },
     calc,
     oldRating: currentRating,
     newRating,

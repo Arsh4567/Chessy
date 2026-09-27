@@ -2,14 +2,11 @@ import React from 'react';
 import { Chess } from 'chess.js';
 import { GameMode, PieceType, AnalyzedMove } from '../../types/chess';
 import { UserPreferences } from '../../utils/storage';
-import { StockfishEvaluation } from '../../utils/stockfishWorker';
-import { LichessData } from '../../utils/lichessExplorer';
 import { PlayerCard } from './PlayerCard';
 import { GameControls } from './GameControls';
 import { ChessBoard } from '../ChessBoard/ChessBoard';
-import { EvalBar } from '../ChessBoard/EvalBar';
 import { MoveHistory } from '../ChessBoard/MoveHistory';
-import { LichessMasters } from '../Analysis/LichessMasters';
+import { Zap, Swords, Shield, Clock } from 'lucide-react';
 
 interface ActiveMatchViewProps {
   chess: Chess;
@@ -29,29 +26,21 @@ interface ActiveMatchViewProps {
     blackLead: number;
   };
   isBotThinking: boolean;
-  currentEval: number;
-  stockfishEval: StockfishEvaluation;
-  isEvaluating: boolean;
   inActiveMatch: boolean;
   gameMode: GameMode;
   isCurrentTurnHuman: boolean;
   lastMove: { from: string; to: string } | null;
-  bestMoveHint: { from: string; to: string } | null;
   preferences: UserPreferences;
-  evaluationDepth: number;
   movesHistory: AnalyzedMove[];
   currentMoveIdx: number;
   openingName?: string;
-  lichessData: LichessData | null;
   onExecuteMove: (move: { from: string; to: string; promotion?: string }) => boolean;
   onResign: () => void;
   onOfferDraw: () => void;
   onTakeback: () => void;
   onFlipBoard: () => void;
-  onRequestHint: () => void;
   onToggleMute: () => void;
   onChangeTheme: (theme: any) => void;
-  onDepthChange: (depth: number) => void;
   onSelectHistoryMove: (idx: number) => void;
 }
 
@@ -65,37 +54,31 @@ export const ActiveMatchView: React.FC<ActiveMatchViewProps> = ({
   capturedBlack,
   material,
   isBotThinking,
-  currentEval,
-  stockfishEval,
-  isEvaluating,
   inActiveMatch,
   gameMode,
   isCurrentTurnHuman,
   lastMove,
-  bestMoveHint,
   preferences,
-  evaluationDepth,
   movesHistory,
   currentMoveIdx,
   openingName,
-  lichessData,
   onExecuteMove,
   onResign,
   onOfferDraw,
   onTakeback,
   onFlipBoard,
-  onRequestHint,
   onToggleMute,
   onChangeTheme,
-  onDepthChange,
   onSelectHistoryMove,
 }) => {
+  const myColor = isFlipped ? 'b' : 'w';
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 lg:gap-5 items-start py-1">
-      {/* Board & Clocks */}
-      <div className="lg:col-span-7 xl:col-span-8 flex flex-col items-center gap-2">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start py-2 max-w-6xl mx-auto">
+      {/* Main Chess Arena (Board & Clocks) */}
+      <div className="lg:col-span-7 xl:col-span-7 flex flex-col items-center gap-2.5 w-full">
         {/* Top Player (Opponent) */}
-        <div className="w-full max-w-[460px] lg:max-w-[480px]">
+        <div className="w-full max-w-[min(94vw,470px,68vh)]">
           <PlayerCard
             name={isFlipped ? 'You' : opponent.name}
             avatar={isFlipped ? '♟️' : opponent.avatar}
@@ -110,39 +93,25 @@ export const ActiveMatchView: React.FC<ActiveMatchViewProps> = ({
           />
         </div>
 
-        {/* Chess Board + Eval Bar */}
-        <div className="flex items-stretch gap-2 sm:gap-2.5 w-full max-w-[460px] lg:max-w-[480px] justify-center">
-          <div className="shrink-0 flex items-stretch">
-            <EvalBar
-              evalScore={currentEval}
-              displayEval={stockfishEval.displayEval}
-              isFlipped={isFlipped}
-              isEvaluating={isEvaluating}
-            />
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <ChessBoard
-              chess={chess}
-              isFlipped={isFlipped}
-              onMove={onExecuteMove}
-              disabled={
-                !inActiveMatch ||
-                (gameMode === 'bot' && !isCurrentTurnHuman) ||
-                isBotThinking
-              }
-              lastMove={lastMove}
-              bestMoveHint={bestMoveHint}
-              boardTheme={preferences.boardTheme}
-              showCoordinates={preferences.showCoordinates}
-              showLegalMoves={preferences.showLegalMoves}
-              autoQueen={preferences.autoQueen}
-            />
-          </div>
+        {/* Responsive Chess Board with Built-in Instant Premove Support */}
+        <div className="w-full flex justify-center">
+          <ChessBoard
+            chess={chess}
+            isFlipped={isFlipped}
+            playerColor={myColor}
+            onMove={onExecuteMove}
+            disabled={!inActiveMatch}
+            allowPremove={true}
+            lastMove={lastMove}
+            boardTheme={preferences.boardTheme}
+            showCoordinates={preferences.showCoordinates}
+            showLegalMoves={preferences.showLegalMoves}
+            autoQueen={preferences.autoQueen}
+          />
         </div>
 
         {/* Bottom Player (You) */}
-        <div className="w-full max-w-[460px] lg:max-w-[480px]">
+        <div className="w-full max-w-[min(94vw,470px,68vh)]">
           <PlayerCard
             name={isFlipped ? opponent.name : 'You'}
             avatar={isFlipped ? opponent.avatar : '♟️'}
@@ -157,29 +126,50 @@ export const ActiveMatchView: React.FC<ActiveMatchViewProps> = ({
           />
         </div>
 
-        {/* Board Controls */}
-        <div className="w-full max-w-[460px] lg:max-w-[480px]">
+        {/* Tactical Match Controls */}
+        <div className="w-full max-w-[min(94vw,470px,68vh)]">
           <GameControls
             mode={gameMode}
             onResign={onResign}
             onOfferDraw={onOfferDraw}
             onTakeback={onTakeback}
             onFlipBoard={onFlipBoard}
-            onRequestHint={onRequestHint}
             isMuted={!preferences.soundEnabled}
             onToggleMute={onToggleMute}
             currentTheme={preferences.boardTheme}
             onChangeTheme={onChangeTheme}
-            evaluationDepth={evaluationDepth}
-            onDepthChange={onDepthChange}
             disabled={!inActiveMatch}
           />
         </div>
       </div>
 
-      {/* Move History & Masters Book */}
-      <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-2.5">
-        <div className="h-[220px] sm:h-[250px]">
+      {/* Match Console Sidebar (Move History, Game Status, Info) */}
+      <div className="lg:col-span-5 xl:col-span-5 flex flex-col gap-3 w-full max-w-[min(94vw,470px,68vh)] lg:max-w-none mx-auto">
+        {/* Match Header Badge */}
+        <div className="p-3 bg-slate-900/90 border border-slate-800 rounded-xl flex items-center justify-between shadow-md">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
+              <Swords className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-200">
+                {gameMode === 'bot' ? `Match vs ${opponent.name}` : (gameMode === 'online-match' || gameMode === 'online-room') ? 'Live Online Match' : 'Pass & Play'}
+              </div>
+              <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Active Game</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-xs text-amber-400 font-mono font-bold">
+            <Zap className="w-3.5 h-3.5" />
+            <span>Premove On</span>
+          </div>
+        </div>
+
+        {/* Move History Sheet */}
+        <div className="h-[280px] sm:h-[320px] lg:h-[380px] w-full">
           <MoveHistory
             moves={movesHistory}
             currentMoveIndex={currentMoveIdx}
@@ -188,29 +178,16 @@ export const ActiveMatchView: React.FC<ActiveMatchViewProps> = ({
           />
         </div>
 
-        {/* Lichess Masters Opening Book & Engine Complement */}
-        <LichessMasters
-          lichessData={lichessData}
-          stockfishEval={stockfishEval}
-          currentFen={chess.fen()}
-          onSelectMove={(san) => {
-            if (inActiveMatch && isCurrentTurnHuman) {
-              try {
-                const verboseMoves = chess.moves({ verbose: true });
-                const match = verboseMoves.find((m) => m.san === san);
-                if (match) {
-                  onExecuteMove({
-                    from: match.from,
-                    to: match.to,
-                    promotion: match.promotion,
-                  });
-                }
-              } catch (err) {
-                console.warn('Error executing Masters move:', err);
-              }
-            }
-          }}
-        />
+        {/* Premove & Fair Play Notice Card */}
+        <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-xl text-xs text-slate-400 flex items-start gap-2.5">
+          <Zap className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <span className="text-slate-200 font-semibold">Lightning Premove:</span>
+            <span className="ml-1 text-slate-400">
+              Queue your next move anytime during opponent's turn. Right-click anywhere to cancel.
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

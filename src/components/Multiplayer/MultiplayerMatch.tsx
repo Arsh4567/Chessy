@@ -286,11 +286,13 @@ export const MultiplayerMatch: React.FC<MultiplayerMatchProps> = ({
           </div>
 
           {/* Chess Board */}
-          <div className="w-full max-w-[460px] aspect-square rounded-3xl overflow-hidden p-2 bg-slate-900/90 border border-slate-800 shadow-2xl flex items-center justify-center">
+          <div className="w-full max-w-[min(94vw,470px,68vh)] aspect-square rounded-3xl overflow-hidden p-2 bg-slate-900/90 border border-slate-800 shadow-2xl flex items-center justify-center">
             <ChessBoard
               chess={chess}
               isFlipped={isFlipped}
-              disabled={!isMyTurn || !roomState.isGameActive || Boolean(roomState.gameOver)}
+              playerColor={myRole === 'black' ? 'b' : myRole === 'white' ? 'w' : undefined}
+              disabled={!roomState.isGameActive || Boolean(roomState.gameOver)}
+              allowPremove={roomState.isGameActive && !Boolean(roomState.gameOver) && myRole !== 'spectator'}
               onMove={(m) => onMove(m)}
               boardTheme="emerald"
               showCoordinates

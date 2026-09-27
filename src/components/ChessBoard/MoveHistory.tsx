@@ -46,6 +46,14 @@ export const MoveHistory: React.FC<MoveHistoryProps> = React.memo(({
     if (move.classification) {
       return (
         <div className="flex items-center gap-1 shrink-0 ml-1.5">
+          {move.isVariation && (
+            <span
+              className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold"
+              title="User-played variation move"
+            >
+              ⚡
+            </span>
+          )}
           {move.isBookMove && (
             <span
               className="text-[10px] px-1 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
@@ -62,6 +70,11 @@ export const MoveHistory: React.FC<MoveHistoryProps> = React.memo(({
     // When Stockfish analysis is pending: Display Analyzing... instead of Book Move!
     return (
       <span className="text-[9px] font-mono text-slate-500 italic ml-1.5 shrink-0 flex items-center gap-1">
+        {move.isVariation && (
+          <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 font-bold mr-0.5">
+            ⚡
+          </span>
+        )}
         <span className="w-1 h-1 rounded-full bg-amber-400/80 animate-ping inline-block" />
         <span>Analyzing...</span>
       </span>

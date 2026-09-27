@@ -10,8 +10,9 @@ import {
   MultiplayerGameOver,
 } from '../types/multiplayer';
 import { sound } from '../utils/sound';
-import { loadUserStats, recordMultiplayerGameResult, UserStats } from '../utils/storage';
+import { loadUserStats, recordMultiplayerGameResult, UserStats, getActiveFirebaseUserId } from '../utils/storage';
 import { INITIAL_RATING, getEloTier } from '../utils/eloRating';
+import { auth } from '../firebase/config';
 
 export interface MultiplayerGameRatingSummary {
   result: 'win' | 'loss' | 'draw';

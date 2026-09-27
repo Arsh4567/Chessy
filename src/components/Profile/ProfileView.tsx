@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserStats } from '../../utils/storage';
 import { getEloTier, INITIAL_RATING } from '../../utils/eloRating';
+import { useAuth } from '../../context/AuthContext';
 import { 
   Trophy, 
   Target, 
@@ -17,7 +18,11 @@ import {
   Shield,
   TrendingUp,
   TrendingDown,
-  Minus
+  Minus,
+  Cloud,
+  LogIn,
+  LogOut,
+  UserCheck
 } from 'lucide-react';
 
 interface ProfileViewProps {
@@ -38,6 +43,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onNavigateToMultiplayer,
 }) => {
   const [historyTab, setHistoryTab] = useState<'multiplayer' | 'local'>('multiplayer');
+  const { user, signInWithGoogle, signOutUser } = useAuth();
 
   const botWinRate = stats.gamesPlayed > 0 ? Math.round((stats.wins / stats.gamesPlayed) * 100) : 0;
   
@@ -56,33 +62,67 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {/* Profile Dossier Header */}
       <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-sky-600 via-indigo-600 to-amber-500 flex items-center justify-center text-3xl shadow-lg shadow-sky-500/20 text-white font-bold shrink-0">
-            {tier.icon}
-          </div>
+          {user?.photoURL ? (
+            <img src={user.photoURL} alt={user.displayName || 'Avatar'} className="w-16 h-16 rounded-2xl border-2 border-sky-400 shadow-lg object-cover shrink-0" />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-sky-600 via-indigo-600 to-amber-500 flex items-center justify-center text-3xl shadow-lg shadow-sky-500/20 text-white font-bold shrink-0">
+              {tier.icon}
+            </div>
+          )}
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-black font-display text-white">Grandmaster Profile</h1>
+              <h1 className="text-2xl font-black font-display text-white">
+                {user?.displayName || 'Grandmaster Profile'}
+              </h1>
               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${tier.badgeColor}`}>
                 {tier.name}
               </span>
-              <span className="px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-500/30 text-[10px] font-mono text-sky-300">
-                Verified
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-mono text-emerald-300 flex items-center gap-1">
+                <Cloud className="w-3 h-3" />
+                <span>Firebase Synced</span>
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1">
-              Multiplayer Elo rating dossier, tactical puzzle rating, and engine evaluation history.
+              {user?.email ? (
+                <span>Connected as <strong className="text-slate-200">{user.email}</strong> • Stats synced with Firebase Firestore</span>
+              ) : (
+                <span>Multiplayer Elo rating dossier, tactical puzzle rating, and cloud match history.</span>
+              )}
             </p>
           </div>
         </div>
 
-        <button
-          onClick={onResetStats}
-          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 hover:border-rose-500/40 border border-slate-700/80 text-slate-300 hover:text-rose-300 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-          <span>Reset Stats</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {user ? (
+            <button
+              onClick={() => signOutUser()}
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+              title="Sign out of Firebase"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sign Out</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => signInWithGoogle()}
+              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 shadow-md"
+              title="Sign in with Google to sync stats across devices in Firebase Firestore"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Sign In with Google</span>
+            </button>
+          )}
+
+          <button
+            onClick={onResetStats}
+            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 hover:border-rose-500/40 border border-slate-700/80 text-slate-300 hover:text-rose-300 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Reset Stats</span>
+          </button>
+        </div>
       </div>
+
 
       {/* Multiplayer Elo Rating Hero Section */}
       <div className="p-6 rounded-3xl bg-gradient-to-br from-slate-900/95 via-slate-900/85 to-[#0b1220] border border-amber-500/30 shadow-2xl space-y-5">

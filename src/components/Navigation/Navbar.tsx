@@ -11,9 +11,12 @@ import {
   Users, 
   Settings, 
   Menu, 
-  X,
-  Crown
+  X, 
+  Crown,
+  Cloud,
+  LogIn
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export type NavTab = 
   | 'home' 
@@ -44,6 +47,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   multiplayerGamesPlayed = 0,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { user, signInWithGoogle, loading } = useAuth();
 
   const navLinks = [
     { id: 'home' as NavTab, label: 'Home', icon: Home },
@@ -75,8 +79,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="text-sm font-black font-display tracking-wider uppercase block leading-none text-white">
               Grandmaster
             </span>
-            <span className="text-[10px] font-mono font-medium text-slate-400 tracking-tight">
-              Chess Platform
+            <span className="text-[10px] font-mono font-medium text-slate-400 tracking-tight flex items-center gap-1">
+              <span>Chess Platform</span>
+              <span className="w-1 h-1 rounded-full bg-amber-400" />
+              <span className="text-amber-400/90 text-[9px]">Firebase</span>
             </span>
           </div>
         </button>
@@ -123,20 +129,39 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* User Profile & Rating Pill */}
           <button
             onClick={() => handleTabClick('profile')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
               currentTab === 'profile'
                 ? 'bg-sky-500 text-slate-950 shadow-md'
                 : 'bg-slate-900 border border-slate-800 text-slate-200 hover:border-slate-700'
             }`}
             title={`Multiplayer Rating: ${multiplayerRating} Elo ${multiplayerGamesPlayed < 7 ? `(Placement ${multiplayerGamesPlayed}/7)` : ''} • Tactics: ${puzzleRating}`}
           >
-            <User className="w-3.5 h-3.5 text-sky-400" />
+            {user?.photoURL ? (
+              <img src={user.photoURL} alt={user.displayName || 'User'} className="w-4 h-4 rounded-full" />
+            ) : (
+              <User className="w-3.5 h-3.5 text-sky-400" />
+            )}
             <span className="text-amber-300">{multiplayerRating}</span>
             <span className="text-[10px] text-slate-400 font-normal">Elo</span>
             {multiplayerGamesPlayed < 7 && (
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title="Placement Phase (Drastic ±100)" />
             )}
+            <span title="Firebase Cloud Synced" className="inline-flex items-center">
+              <Cloud className="w-3 h-3 text-emerald-400/80 ml-0.5" />
+            </span>
           </button>
+
+          {/* Google Sign In Button if not logged in */}
+          {!user && !loading && (
+            <button
+              onClick={() => signInWithGoogle()}
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-xs font-bold transition-all cursor-pointer hidden sm:flex items-center gap-1.5 shadow-sm"
+              title="Sign in with Google to sync Elo ratings and match history across devices in Firebase Firestore"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Google Sign-In</span>
+            </button>
+          )}
 
           {/* Settings Trigger */}
           <button
@@ -157,6 +182,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </div>
       </div>
+
 
       {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (

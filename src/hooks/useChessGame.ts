@@ -326,38 +326,10 @@ export function useChessGame({
     setChess(nextChess);
     chessRef.current = nextChess;
 
-    // Immediately trigger real Stockfish UCI evaluation for new position & upgrade classification
-    evaluateCurrentPosition(nextChess.fen()).then((evalRes) => {
-      if (evalRes && evalRes.scoreCp !== undefined) {
-        const accurateEval = evalRes.evalPawns ?? +(evalRes.scoreCp / 100).toFixed(2);
-        const deepClassification = classifyEngineMove(
-          new Chess(currentChess.fen()),
-          moveResult,
-          evalBefore,
-          evalRes.scoreCp,
-          bestMoveSan,
-          moveNumber,
-          { isBookOpeningMove: isBook }
-        );
-
-        setMovesHistory((prev) => {
-          if (prev.length === 0) return prev;
-          const updated = [...prev];
-          const targetIdx = updated.findIndex((m) => m.fen === nextChess.fen());
-          const idx = targetIdx !== -1 ? targetIdx : updated.length - 1;
-          if (updated[idx]) {
-            updated[idx] = {
-              ...updated[idx],
-              eval: accurateEval,
-              classification: deepClassification.classification,
-              commentary: deepClassification.commentary,
-              bestMoveSan: bestMoveSan || updated[idx].bestMoveSan,
-            };
-          }
-          return updated;
-        });
-      }
-    });
+    // In active matches, do not run live engine evaluation (reserved for Analysis and Learn modes)
+    if (!inActiveMatch) {
+      evaluateCurrentPosition(nextChess.fen()).catch(() => {});
+    }
 
     // Check game over
     if (nextChess.isCheckmate()) {

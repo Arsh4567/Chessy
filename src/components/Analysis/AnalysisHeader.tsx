@@ -5,7 +5,10 @@ import {
   Check, 
   Upload, 
   Globe,
-  ChevronLeft
+  ChevronLeft,
+  Navigation,
+  CornerUpLeft,
+  Sparkles
 } from 'lucide-react';
 
 interface AnalysisHeaderProps {
@@ -14,15 +17,20 @@ interface AnalysisHeaderProps {
   analysisProgress: number;
   showChessCom: boolean;
   showPgnImport: boolean;
+  showBestMoveArrow: boolean;
   isFlipped: boolean;
   copiedPgn: boolean;
   copiedFen: boolean;
+  isVariationActive?: boolean;
+  variationOriginMoveNum?: number;
   onExitAnalysis: () => void;
   onToggleChessCom: () => void;
   onTogglePgnImport: () => void;
+  onToggleBestMoveArrow: () => void;
   onToggleFlip: () => void;
   onCopyPgn: () => void;
   onCopyFen: () => void;
+  onReturnToMainline?: () => void;
 }
 
 export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
@@ -31,15 +39,20 @@ export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
   analysisProgress,
   showChessCom,
   showPgnImport,
+  showBestMoveArrow,
   isFlipped,
   copiedPgn,
   copiedFen,
+  isVariationActive,
+  variationOriginMoveNum,
   onExitAnalysis,
   onToggleChessCom,
   onTogglePgnImport,
+  onToggleBestMoveArrow,
   onToggleFlip,
   onCopyPgn,
   onCopyFen,
+  onReturnToMainline,
 }) => {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-slate-900/90 border border-slate-800 rounded-3xl shadow-xl">
@@ -52,16 +65,34 @@ export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
           <span>Exit</span>
         </button>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <h1 className="text-base font-black font-display text-white">
             Stockfish Analysis Board
           </h1>
-          {opening && (
+          {opening && !isVariationActive && (
             <span className="hidden sm:inline-flex items-center gap-1 text-xs font-mono text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2.5 py-0.5 rounded-lg">
               <span className="font-bold">{opening.eco}</span>
               <span className="text-slate-300 font-sans truncate max-w-[200px]">{opening.name}</span>
             </span>
           )}
+
+          {isVariationActive && (
+            <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/40 text-[11px] text-amber-300 font-semibold animate-in fade-in">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Exploring Variation {variationOriginMoveNum ? `(from Move ${variationOriginMoveNum})` : ''}</span>
+              {onReturnToMainline && (
+                <button
+                  onClick={onReturnToMainline}
+                  className="ml-1 px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-bold hover:bg-amber-400 transition-colors flex items-center gap-1 cursor-pointer"
+                  title="Return to Original Game"
+                >
+                  <CornerUpLeft className="w-3 h-3" />
+                  <span>Mainline</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {isProgressivelyAnalyzing && analysisProgress < 100 && (
             <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-400">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -72,6 +103,20 @@ export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
+        {/* Toggle Best Move Arrow */}
+        <button
+          onClick={onToggleBestMoveArrow}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors cursor-pointer ${
+            showBestMoveArrow
+              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
+              : 'bg-slate-800 hover:bg-slate-750 text-slate-400 border-slate-750'
+          }`}
+          title={showBestMoveArrow ? 'Best Move Arrow: Enabled' : 'Best Move Arrow: Hidden'}
+        >
+          <Navigation className={`w-3.5 h-3.5 ${showBestMoveArrow ? 'text-emerald-400' : 'text-slate-500'}`} />
+          <span>Best Move Arrow</span>
+        </button>
+
         <button
           onClick={onToggleChessCom}
           className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors cursor-pointer ${

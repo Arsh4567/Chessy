@@ -16,6 +16,7 @@ import { parseGameMovesInstantly, analyzeGameProgressively, ProgressiveAnalysisC
 import { detectOpening } from '../../utils/openings';
 import { sound } from '../../utils/sound';
 import { stockfish, StockfishEvaluation, formatPvToSan } from '../../utils/stockfishWorker';
+import { classifyEngineMove } from '../../utils/moveClassification';
 import { 
   Layers, 
   BookOpen, 
@@ -37,6 +38,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   const [currentMoveIdx, setCurrentMoveIdx] = useState<number>(-1);
   const [analyzedData, setAnalyzedData] = useState<AnalyzedGame | null>(null);
 
+  // Mainline game cache to allow users to freely explore variations and return
+  const [mainlineGame, setMainlineGame] = useState<AnalyzedGame | null>(null);
+  const [isVariationActive, setIsVariationActive] = useState<boolean>(false);
+  const [variationOriginIdx, setVariationOriginIdx] = useState<number>(-1);
+
+  const [showBestMoveArrow, setShowBestMoveArrow] = useState<boolean>(true);
   const [isFlipped, setIsFlipped] = useState(false);
   const [copiedPgn, setCopiedPgn] = useState(false);
   const [copiedFen, setCopiedFen] = useState(false);
@@ -125,11 +132,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
   // Dynamic live best move hint from Stockfish
   const activeBestMoveHint = useMemo(() => {
-    if (currentMove?.bestMove) {
-      return { from: currentMove.bestMove.from, to: currentMove.bestMove.to };
-    }
     if (stockfishEval.bestMove) {
       return { from: stockfishEval.bestMove.from, to: stockfishEval.bestMove.to };
+    }
+    if (currentMove?.bestMove) {
+      return { from: currentMove.bestMove.from, to: currentMove.bestMove.to };
     }
     return null;
   }, [currentMove?.bestMove, stockfishEval.bestMove]);
@@ -142,6 +149,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     if (analysisControllerRef.current) {
       analysisControllerRef.current.abort();
     }
+
+    setIsVariationActive(false);
+    setVariationOriginIdx(-1);
 
     const rawPgn = pgnText?.trim() || '';
     
@@ -168,6 +178,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
     const instantResult = parseGameMovesInstantly(movesToAnalyze, rawPgn || undefined);
     setAnalyzedData(instantResult);
+    setMainlineGame(instantResult);
 
     if (instantResult.analyzedMoves.length > 0) {
       const firstFen = instantResult.analyzedMoves[0]?.fen;
@@ -195,10 +206,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
       currentKey,
       (updatedGame, currentIdx, progressPercent) => {
         setAnalyzedData(updatedGame);
+        setMainlineGame(updatedGame);
         setAnalysisProgress(progressPercent);
       },
       (finalGame) => {
         setAnalyzedData(finalGame);
+        setMainlineGame(finalGame);
         setAnalysisProgress(100);
         setIsProgressivelyAnalyzing(false);
       },
@@ -245,6 +258,182 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     }
   };
 
+  /**
+   * Execute and deep-analyze player moves in analysis mode (branching & variations)
+   */
+  const handleUserMove = useCallback((m: { from: string; to: string; promotion?: string } | string) => {
+    try {
+      const currentBoard = new Chess(chess.fen());
+      const fenBefore = chess.fen();
+      const moveRes = currentBoard.move(m);
+
+      if (!moveRes) {
+        sound.playIllegal();
+        return false;
+      }
+
+      if (moveRes.captured) {
+        sound.playCapture();
+      } else {
+        sound.playMove();
+      }
+
+      const fenAfter = currentBoard.fen();
+
+      // Check if user is simply following the mainline next move
+      const nextMainlineMove = mainlineGame?.analyzedMoves[currentMoveIdx + 1];
+      if (
+        !isVariationActive &&
+        nextMainlineMove &&
+        (nextMainlineMove.san === moveRes.san ||
+          (nextMainlineMove.from === moveRes.from && nextMainlineMove.to === moveRes.to))
+      ) {
+        jumpToMove(currentMoveIdx + 1, mainlineGame.analyzedMoves);
+        return true;
+      }
+
+      // User has branched into a new move or alternative line!
+      if (!isVariationActive) {
+        if (!mainlineGame && analyzedData) {
+          setMainlineGame(analyzedData);
+        }
+        setIsVariationActive(true);
+        setVariationOriginIdx(currentMoveIdx);
+      }
+
+      const moveNum = Math.floor(currentBoard.history().length / 2) + 1;
+      const evalBeforePawns = currentMove?.eval ?? (stockfishEval.evalPawns ?? (stockfishEval.scoreCp / 100));
+      const bestMoveBeforeSan = livePvSan[0] || currentMove?.bestMoveSan || '';
+
+      const baseMoves = (analyzedData?.analyzedMoves || []).slice(0, currentMoveIdx + 1);
+
+      const newMoveItem: AnalyzedMove = {
+        from: moveRes.from,
+        to: moveRes.to,
+        san: moveRes.san,
+        piece: moveRes.piece as any,
+        color: moveRes.color as any,
+        captured: moveRes.captured as any,
+        promotion: moveRes.promotion as any,
+        fen: fenAfter,
+        eval: evalBeforePawns,
+        evalBefore: evalBeforePawns,
+        isVariation: true,
+        branchFromIndex: isVariationActive ? variationOriginIdx : currentMoveIdx,
+      };
+
+      const updatedMoves = [...baseMoves, newMoveItem];
+      const targetMoveIdx = updatedMoves.length - 1;
+
+      setAnalyzedData((prev) => {
+        if (!prev) {
+          return {
+            whiteAccuracy: 95,
+            blackAccuracy: 95,
+            analyzedMoves: updatedMoves,
+            whiteBrilliants: 0,
+            blackBrilliants: 0,
+            whiteBests: 0,
+            blackBests: 0,
+            whiteExcellents: 0,
+            blackExcellents: 0,
+            whiteGoods: 0,
+            blackGoods: 0,
+            whiteInaccuracies: 0,
+            blackInaccuracies: 0,
+            whiteMistakes: 0,
+            blackMistakes: 0,
+            whiteBlunders: 0,
+            blackBlunders: 0,
+          };
+        }
+        return {
+          ...prev,
+          analyzedMoves: updatedMoves,
+        };
+      });
+
+      setChess(currentBoard);
+      setCurrentMoveIdx(targetMoveIdx);
+
+      // Instantly evaluate the played move and the new position with Stockfish
+      stockfish.evaluatePosition(fenAfter, 16).then((evalRes) => {
+        if (evalRes) {
+          const accurateEval = evalRes.evalPawns ?? +(evalRes.scoreCp / 100).toFixed(2);
+          const classification = classifyEngineMove(
+            new Chess(fenBefore),
+            moveRes,
+            Math.round(evalBeforePawns * 100),
+            evalRes.scoreCp,
+            bestMoveBeforeSan,
+            moveNum
+          );
+
+          setAnalyzedData((prev) => {
+            if (!prev) return prev;
+            const updated = [...prev.analyzedMoves];
+            if (updated[targetMoveIdx]) {
+              updated[targetMoveIdx] = {
+                ...updated[targetMoveIdx],
+                eval: accurateEval,
+                classification: classification.classification,
+                commentary: classification.commentary,
+                bestMoveSan: evalRes.bestMove ? formatPvToSan(fenAfter, [evalRes.bestMove.from + evalRes.bestMove.to])[0] : undefined,
+                bestMove: evalRes.bestMove ? { from: evalRes.bestMove.from, to: evalRes.bestMove.to } : undefined,
+                depth: evalRes.depth,
+              };
+            }
+            return {
+              ...prev,
+              analyzedMoves: updated,
+            };
+          });
+
+          setStockfishEval(evalRes);
+        }
+      });
+
+      return true;
+    } catch {
+      sound.playIllegal();
+      return false;
+    }
+  }, [
+    chess,
+    currentMoveIdx,
+    mainlineGame,
+    isVariationActive,
+    analyzedData,
+    variationOriginIdx,
+    currentMove,
+    stockfishEval,
+    livePvSan,
+  ]);
+
+  /**
+   * Return to the pristine mainline game
+   */
+  const handleReturnToMainline = useCallback(() => {
+    if (mainlineGame) {
+      setAnalyzedData(mainlineGame);
+      setIsVariationActive(false);
+      const returnIdx = variationOriginIdx >= 0 ? variationOriginIdx : 0;
+      jumpToMove(returnIdx, mainlineGame.analyzedMoves);
+    }
+  }, [mainlineGame, variationOriginIdx]);
+
+  /**
+   * Play the Stockfish top recommended move directly
+   */
+  const handlePlayBestMove = useCallback(() => {
+    if (activeBestMoveHint) {
+      handleUserMove({
+        from: activeBestMoveHint.from,
+        to: activeBestMoveHint.to,
+      });
+    }
+  }, [activeBestMoveHint, handleUserMove]);
+
   const handleImportPgn = () => {
     const pgn = customPgnInput.trim();
     if (!pgn) return;
@@ -285,6 +474,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
   const opening = detectOpening(analyzedData?.analyzedMoves.map((m) => m.san) || []);
 
+  const variationOriginMoveNum = variationOriginIdx >= 0 ? Math.floor(variationOriginIdx / 2) + 1 : undefined;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5 animate-in fade-in duration-200">
       {/* Top Header & Toolbar */}
@@ -294,9 +485,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
         analysisProgress={analysisProgress}
         showChessCom={showChessCom}
         showPgnImport={showPgnImport}
+        showBestMoveArrow={showBestMoveArrow}
         isFlipped={isFlipped}
         copiedPgn={copiedPgn}
         copiedFen={copiedFen}
+        isVariationActive={isVariationActive}
+        variationOriginMoveNum={variationOriginMoveNum}
         onExitAnalysis={onExitAnalysis}
         onToggleChessCom={() => {
           setShowChessCom(!showChessCom);
@@ -306,9 +500,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
           setShowPgnImport(!showPgnImport);
           if (showChessCom) setShowChessCom(false);
         }}
+        onToggleBestMoveArrow={() => setShowBestMoveArrow(!showBestMoveArrow)}
         onToggleFlip={() => setIsFlipped(!isFlipped)}
         onCopyPgn={handleCopyPgn}
         onCopyFen={handleCopyFen}
+        onReturnToMainline={handleReturnToMainline}
       />
 
       {/* Chess.com Games Explorer Drawer */}
@@ -382,26 +578,13 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
               <ChessBoard
                 chess={chess}
                 isFlipped={isFlipped}
-                onMove={(m) => {
-                  try {
-                    const test = new Chess(chess.fen());
-                    const res = test.move(m);
-                    if (res) {
-                      sound.playMove();
-                      setChess(test);
-                      setCurrentMoveIdx(-1);
-                      return true;
-                    }
-                  } catch {
-                    sound.playIllegal();
-                  }
-                  return false;
-                }}
+                onMove={handleUserMove}
                 lastMove={
                   currentMove ? { from: currentMove.from, to: currentMove.to } : null
                 }
                 moveQualityClassification={currentMove?.classification}
                 bestMoveHint={activeBestMoveHint}
+                showBestMoveArrow={showBestMoveArrow}
                 disabled={false}
               />
             </div>
@@ -413,8 +596,12 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             currentMoveIdx={currentMoveIdx}
             totalMoves={analyzedData?.analyzedMoves.length || 0}
             isProgressivelyAnalyzing={isProgressivelyAnalyzing}
+            activeBestMoveSan={livePvSan[0]}
+            isVariationActive={isVariationActive}
             onPrevMove={() => jumpToMove(Math.max(0, currentMoveIdx - 1))}
             onNextMove={() => jumpToMove(Math.min((analyzedData?.analyzedMoves.length || 1) - 1, currentMoveIdx + 1))}
+            onPlayBestMove={handlePlayBestMove}
+            onReturnToMainline={handleReturnToMainline}
           />
 
           {/* Continuous Live Engine Evaluation HUD */}
@@ -478,17 +665,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
               <OpeningExplorer
                 fen={chess.fen()}
                 onSelectMove={(san) => {
-                  try {
-                    const test = new Chess(chess.fen());
-                    const res = test.move(san);
-                    if (res) {
-                      sound.playMove();
-                      setChess(test);
-                      setCurrentMoveIdx(-1);
-                    }
-                  } catch {
-                    sound.playIllegal();
-                  }
+                  handleUserMove(san);
                 }}
                 stockfishEval={stockfishEval}
                 bestMoveSan={livePvSan[0]}

@@ -1,0 +1,138 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public user profile information excluding PII",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 64 },
+        "photoURL": { "type": "string", "maxLength": 512 },
+        "multiplayerRating": { "type": "number" },
+        "multiplayerGamesPlayed": { "type": "number" },
+        "puzzleRating": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "displayName"]
+    },
+    "UserPrivateAccount": {
+      "title": "UserPrivateAccount",
+      "description": "Private sensitive user account information",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 256 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "UserStats": {
+      "title": "UserStats",
+      "description": "Detailed chess statistics, match history, and Elo ratings for a user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "gamesPlayed": { "type": "number" },
+        "wins": { "type": "number" },
+        "losses": { "type": "number" },
+        "draws": { "type": "number" },
+        "puzzleRating": { "type": "number" },
+        "puzzlesSolved": { "type": "number" },
+        "multiplayerRating": { "type": "number" },
+        "multiplayerGamesPlayed": { "type": "number" },
+        "multiplayerWins": { "type": "number" },
+        "multiplayerLosses": { "type": "number" },
+        "multiplayerDraws": { "type": "number" },
+        "multiplayerPeakRating": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "multiplayerRating", "multiplayerGamesPlayed"]
+    },
+    "UserPreferences": {
+      "title": "UserPreferences",
+      "description": "User chess board and engine preferences",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "boardTheme": { "type": "string", "maxLength": 32 },
+        "stockfishLevel": { "type": "number" },
+        "engineThinkingSeconds": { "type": "number" },
+        "soundEnabled": { "type": "boolean" },
+        "showCoordinates": { "type": "boolean" },
+        "showLegalMoves": { "type": "boolean" },
+        "autoQueen": { "type": "boolean" },
+        "defaultTimeControl": { "type": "string", "maxLength": 32 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId"]
+    },
+    "MultiplayerMatch": {
+      "title": "MultiplayerMatch",
+      "description": "Record of a completed multiplayer match",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "roomId": { "type": "string", "maxLength": 64 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "opponentName": { "type": "string", "maxLength": 64 },
+        "opponentRating": { "type": "number" },
+        "ratingBefore": { "type": "number" },
+        "ratingAfter": { "type": "number" },
+        "ratingDelta": { "type": "number" },
+        "isProvisional": { "type": "boolean" },
+        "matchNumber": { "type": "number" },
+        "result": { "type": "string", "enum": ["win", "loss", "draw"] },
+        "movesCount": { "type": "number" },
+        "pgn": { "type": "string", "maxLength": 8192 },
+        "date": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "roomId", "userId", "result", "ratingBefore", "ratingAfter"]
+    },
+    "PublicLeaderboardEntry": {
+      "title": "PublicLeaderboardEntry",
+      "description": "Public real-time multiplayer leaderboard entry for each registered player",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 64 },
+        "photoURL": { "type": "string", "maxLength": 512 },
+        "multiplayerRating": { "type": "number" },
+        "multiplayerGamesPlayed": { "type": "number" },
+        "multiplayerWins": { "type": "number" },
+        "multiplayerLosses": { "type": "number" },
+        "multiplayerDraws": { "type": "number" },
+        "puzzleRating": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "displayName", "multiplayerRating", "multiplayerGamesPlayed"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/public/profile": {
+      "schema": "UserProfile",
+      "description": "Public profile info for a user"
+    },
+    "/users/{userId}/private/account": {
+      "schema": "UserPrivateAccount",
+      "description": "Private user account info such as email"
+    },
+    "/users/{userId}/stats/current": {
+      "schema": "UserStats",
+      "description": "Current chess stats and ratings for a user"
+    },
+    "/users/{userId}/preferences/current": {
+      "schema": "UserPreferences",
+      "description": "User chess configuration preferences"
+    },
+    "/users/{userId}/matches/{matchId}": {
+      "schema": "MultiplayerMatch",
+      "description": "Personal multiplayer match history logs"
+    },
+    "/public_leaderboard/{userId}": {
+      "schema": "PublicLeaderboardEntry",
+      "description": "Public live leaderboard entries"
+    }
+  }
+}

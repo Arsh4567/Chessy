@@ -23,6 +23,43 @@ const ai = new GoogleGenAI({
   },
 });
 
+// API endpoint to proxy Lichess Puzzles with LICHESS_API_KEY support
+app.get('/api/lichess/puzzle/:action', async (req, res) => {
+  try {
+    const action = req.params.action;
+    let lichessUrl = `https://lichess.org/api/puzzle/${action}`;
+    if (action === 'daily') {
+      lichessUrl = 'https://lichess.org/api/puzzle/daily';
+    } else if (action === 'next') {
+      lichessUrl = 'https://lichess.org/api/puzzle/next';
+    }
+
+    const token = process.env.LICHESS_TOKEN || process.env.LICHESS_API_KEY || '';
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'User-Agent': 'ChessMasterApp/1.0',
+    };
+    if (token && token.trim()) {
+      headers['Authorization'] = `Bearer ${token.trim()}`;
+    }
+
+    const upstreamResponse = await fetch(lichessUrl, { headers });
+
+    if (!upstreamResponse.ok) {
+      console.warn(`[Lichess Puzzle Proxy] (${action}) responded with HTTP ${upstreamResponse.status}`);
+      return res.status(upstreamResponse.status).json({
+        error: `Lichess puzzle API returned HTTP ${upstreamResponse.status}`,
+      });
+    }
+
+    const data = await upstreamResponse.json();
+    return res.json(data);
+  } catch (error: any) {
+    console.error('[Lichess Puzzle Proxy] Error proxying puzzle request:', error);
+    return res.status(502).json({ error: 'Failed to connect to Lichess Puzzle API' });
+  }
+});
+
 // API endpoint to proxy Lichess Masters & Community Opening Explorer requests securely
 app.get('/api/lichess/:type', async (req, res) => {
   try {

@@ -12,8 +12,12 @@ import {
   loadUserStats, 
   recordPuzzleSolved,
   UserPreferences,
-  UserStats
+  UserStats,
+  syncUserDataFromFirestore,
+  getActiveFirebaseUserId,
+  setActiveFirebaseUserId
 } from './utils/storage';
+import { useAuth } from './context/AuthContext';
 import { stockfish } from './utils/stockfishWorker';
 import { Navbar, NavTab } from './components/Navigation/Navbar';
 import { GameOverModal } from './components/Game/GameOverModal';
@@ -21,6 +25,7 @@ import { ActiveMatchView } from './components/Game/ActiveMatchView';
 import { CustomFenModal } from './components/Game/CustomFenModal';
 import { fetchChessComRecentGames, ChessComGame, ChessComPlayer } from './utils/chessComApi';
 import { useChessGame } from './hooks/useChessGame';
+import { Home, Swords, Zap, BookOpen, Search, Users } from 'lucide-react';
 
 // Lazy loaded views to minimize initial bundle size and main-thread execution
 const HomeView = React.lazy(() =>
@@ -55,12 +60,33 @@ const SettingsModal = React.lazy(() =>
 );
 
 export default function App() {
+  const { user } = useAuth();
+
   // Navigation & Preferences (Home is the modern command center view)
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [preferences, setPreferences] = useState<UserPreferences>(loadPreferences);
   const [stats, setStats] = useState<UserStats>(loadUserStats);
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showFenModal, setShowFenModal] = useState<boolean>(false);
+
+  // Sync user stats & preferences with Firebase Firestore
+  useEffect(() => {
+    const targetUid = user ? user.uid : getActiveFirebaseUserId();
+    if (user?.uid) {
+      setActiveFirebaseUserId(user.uid);
+    }
+    if (targetUid) {
+      syncUserDataFromFirestore(targetUid)
+        .then(({ stats: syncedStats, prefs: syncedPrefs }) => {
+          setStats({ ...syncedStats });
+          setPreferences({ ...syncedPrefs });
+        })
+        .catch((err) => {
+          console.warn('Firebase Firestore sync notice:', err);
+        });
+    }
+  }, [user]);
+
 
   // Active Game State via Hook
   const {
@@ -215,7 +241,7 @@ export default function App() {
       />
 
       {/* Main App View */}
-      <main className="flex-1 flex flex-col">
+      <main className="flex-1 flex flex-col pb-20 md:pb-6">
         {activeTab === 'play' ? (
           <div className="max-w-6xl mx-auto px-4 py-4 w-full flex-1 flex flex-col justify-center">
             {!inActiveMatch ? (
@@ -248,26 +274,19 @@ export default function App() {
                 capturedBlack={capturedBlack}
                 material={material}
                 isBotThinking={isBotThinking}
-                currentEval={currentEval}
-                stockfishEval={stockfishEval}
-                isEvaluating={isEvaluating}
                 inActiveMatch={inActiveMatch}
                 gameMode={gameMode}
                 isCurrentTurnHuman={isCurrentTurnHuman}
                 lastMove={lastMove}
-                bestMoveHint={bestMoveHint}
                 preferences={preferences}
-                evaluationDepth={evaluationDepth}
                 movesHistory={movesHistory}
                 currentMoveIdx={currentMoveIdx}
                 openingName={opening?.name}
-                lichessData={lichessData}
                 onExecuteMove={executeMove}
                 onResign={() => handleGameOver('loss', 'Resigned')}
                 onOfferDraw={() => handleGameOver('draw', 'Draw agreed')}
                 onTakeback={handleTakeback}
                 onFlipBoard={() => setIsFlipped(!isFlipped)}
-                onRequestHint={handleRequestHint}
                 onToggleMute={() =>
                   handleUpdatePreferences({
                     ...preferences,
@@ -277,7 +296,6 @@ export default function App() {
                 onChangeTheme={(t) =>
                   handleUpdatePreferences({ ...preferences, boardTheme: t })
                 }
-                onDepthChange={handleDepthChange}
                 onSelectHistoryMove={(idx) => {
                   try {
                     if (idx < 0) {
@@ -286,7 +304,6 @@ export default function App() {
                       chessRef.current = startBoard;
                       setCurrentMoveIdx(-1);
                       setLastMove(null);
-                      evaluateCurrentPosition(startBoard.fen());
                     } else if (movesHistory[idx]) {
                       const targetFen = movesHistory[idx].fen;
                       const targetBoard = targetFen ? new Chess(targetFen) : new Chess();
@@ -297,7 +314,6 @@ export default function App() {
                         from: movesHistory[idx].from,
                         to: movesHistory[idx].to,
                       });
-                      evaluateCurrentPosition(targetBoard.fen());
                     }
                   } catch (err) {
                     console.warn('onSelectMove error:', err);
@@ -557,6 +573,39 @@ export default function App() {
           setActiveTab('play');
         }}
       />
+      {/* Mobile Bottom Navigation Bar (Optimized for Thumb Reach & Touch Accessibility) */}
+      <nav 
+        aria-label="Mobile Navigation"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 border-t border-slate-800/90 backdrop-blur-lg px-2 py-1.5 flex items-center justify-around shadow-2xl safe-area-inset-bottom"
+      >
+        {[
+          { id: 'home' as NavTab, label: 'Home', icon: Home },
+          { id: 'play' as NavTab, label: 'Play', icon: Swords },
+          { id: 'puzzles' as NavTab, label: 'Puzzles', icon: Zap },
+          { id: 'learn' as NavTab, label: 'Learn', icon: BookOpen },
+          { id: 'analyze' as NavTab, label: 'Analyze', icon: Search },
+          { id: 'friends' as NavTab, label: 'Online', icon: Users },
+        ].map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              aria-label={item.label}
+              aria-current={isActive ? 'page' : undefined}
+              className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
+                isActive
+                  ? 'text-sky-400 font-bold scale-105'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Icon className="w-4 h-4 mb-0.5" />
+              <span className="text-[10px] tracking-tight">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }
