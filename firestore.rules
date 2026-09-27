@@ -1,159 +1,115 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Global Default-Deny Catch-All
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
+    
     // Helper functions
-    function isSignedIn() {
+    function isAuthenticated() {
       return request.auth != null;
     }
-
+    
     function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function incoming() {
-      return request.resource.data;
+    // Public Profiles
+    match /users/{userId}/profile/public {
+      allow read: if true;
+      allow write: if isOwner(userId);
     }
 
-    function existing() {
-      return resource.data;
+    // Private User Accounts
+    match /users/{userId}/private/{docId} {
+      allow read, write: if isOwner(userId);
     }
 
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    // Validation blueprints
-    function isValidUserProfile(data) {
-      return data.keys().hasAll(['userId', 'displayName']) &&
-        data.keys().hasOnly(['userId', 'displayName', 'photoURL', 'multiplayerRating', 'multiplayerGamesPlayed', 'puzzleRating', 'createdAt', 'updatedAt']) &&
-        data.userId == request.auth.uid &&
-        data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 64 &&
-        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 512)) &&
-        (!('multiplayerRating' in data) || (data.multiplayerRating is number && data.multiplayerRating >= 100 && data.multiplayerRating <= 3500)) &&
-        (!('multiplayerGamesPlayed' in data) || (data.multiplayerGamesPlayed is number && data.multiplayerGamesPlayed >= 0)) &&
-        (!('puzzleRating' in data) || (data.puzzleRating is number && data.puzzleRating >= 100 && data.puzzleRating <= 3500));
-    }
-
-    function isValidUserPrivateAccount(data) {
-      return data.keys().hasAll(['email']) &&
-        data.keys().hasOnly(['email', 'createdAt', 'updatedAt']) &&
-        data.email is string && data.email.size() > 0 && data.email.size() <= 256;
-    }
-
-    function isValidUserStats(data) {
-      return data.keys().hasAll(['userId', 'multiplayerRating', 'multiplayerGamesPlayed']) &&
-        data.keys().hasOnly([
-          'userId', 'gamesPlayed', 'wins', 'losses', 'draws',
-          'puzzleRating', 'puzzlesSolved', 'multiplayerRating',
-          'multiplayerGamesPlayed', 'multiplayerWins', 'multiplayerLosses',
-          'multiplayerDraws', 'multiplayerPeakRating', 'updatedAt'
-        ]) &&
-        data.userId == request.auth.uid &&
-        data.multiplayerRating is number && data.multiplayerRating >= 100 && data.multiplayerRating <= 3500 &&
-        data.multiplayerGamesPlayed is number && data.multiplayerGamesPlayed >= 0 &&
-        (!('multiplayerPeakRating' in data) || (data.multiplayerPeakRating is number && data.multiplayerPeakRating >= 100)) &&
-        (!('gamesPlayed' in data) || (data.gamesPlayed is number && data.gamesPlayed >= 0)) &&
-        (!('wins' in data) || (data.wins is number && data.wins >= 0)) &&
-        (!('losses' in data) || (data.losses is number && data.losses >= 0)) &&
-        (!('draws' in data) || (data.draws is number && data.draws >= 0)) &&
-        (!('puzzleRating' in data) || (data.puzzleRating is number && data.puzzleRating >= 100)) &&
-        (!('puzzlesSolved' in data) || (data.puzzlesSolved is number && data.puzzlesSolved >= 0));
-    }
-
-    function isValidUserPreferences(data) {
-      return data.keys().hasAll(['userId']) &&
-        data.keys().hasOnly([
-          'userId', 'boardTheme', 'stockfishLevel', 'engineThinkingSeconds',
-          'soundEnabled', 'showCoordinates', 'showLegalMoves', 'autoQueen',
-          'defaultTimeControl', 'updatedAt'
-        ]) &&
-        data.userId == request.auth.uid &&
-        (!('boardTheme' in data) || (data.boardTheme is string && data.boardTheme.size() <= 32)) &&
-        (!('stockfishLevel' in data) || (data.stockfishLevel is number && data.stockfishLevel >= 0 && data.stockfishLevel <= 20)) &&
-        (!('engineThinkingSeconds' in data) || (data.engineThinkingSeconds is number && data.engineThinkingSeconds >= 1 && data.engineThinkingSeconds <= 30)) &&
-        (!('soundEnabled' in data) || (data.soundEnabled is bool)) &&
-        (!('showCoordinates' in data) || (data.showCoordinates is bool)) &&
-        (!('showLegalMoves' in data) || (data.showLegalMoves is bool)) &&
-        (!('autoQueen' in data) || (data.autoQueen is bool)) &&
-        (!('defaultTimeControl' in data) || (data.defaultTimeControl is string && data.defaultTimeControl.size() <= 32));
-    }
-
-    function isValidMatch(data) {
-      return data.keys().hasAll(['id', 'roomId', 'userId', 'result', 'ratingBefore', 'ratingAfter']) &&
-        data.keys().hasOnly([
-          'id', 'roomId', 'userId', 'opponentName', 'opponentRating',
-          'ratingBefore', 'ratingAfter', 'ratingDelta', 'isProvisional',
-          'matchNumber', 'result', 'movesCount', 'pgn', 'date', 'createdAt'
-        ]) &&
-        data.userId == request.auth.uid &&
-        data.id is string && data.id.size() <= 128 &&
-        data.roomId is string && data.roomId.size() <= 64 &&
-        (data.result == 'win' || data.result == 'loss' || data.result == 'draw') &&
-        data.ratingBefore is number && data.ratingBefore >= 100 &&
-        data.ratingAfter is number && data.ratingAfter >= 100 &&
-        (!('opponentName' in data) || (data.opponentName is string && data.opponentName.size() <= 64)) &&
-        (!('movesCount' in data) || (data.movesCount is number && data.movesCount >= 0)) &&
-        (!('pgn' in data) || (data.pgn is string && data.pgn.size() <= 8192));
-    }
-
-    function isValidLeaderboard(data) {
-      return data.keys().hasAll(['userId', 'displayName', 'multiplayerRating', 'multiplayerGamesPlayed']) &&
-        data.keys().hasOnly([
-          'userId', 'displayName', 'photoURL', 'multiplayerRating',
-          'multiplayerGamesPlayed', 'multiplayerWins', 'multiplayerLosses',
-          'multiplayerDraws', 'puzzleRating', 'updatedAt'
-        ]) &&
-        data.userId == request.auth.uid &&
-        data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 64 &&
-        data.multiplayerRating is number && data.multiplayerRating >= 100 && data.multiplayerRating <= 3500 &&
-        data.multiplayerGamesPlayed is number && data.multiplayerGamesPlayed >= 0 &&
-        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 512)) &&
-        (!('puzzleRating' in data) || (data.puzzleRating is number && data.puzzleRating >= 100));
-    }
-
-    // Public Profile Subcollection
-    match /users/{userId}/public/profile {
-      allow read: if isSignedIn();
-      allow create, update: if isValidId(userId) && isOwner(userId) && isValidUserProfile(incoming());
-      allow delete: if false;
-    }
-
-    // Private Account Subcollection (PII Isolation)
-    match /users/{userId}/private/account {
-      allow read, write: if isValidId(userId) && isOwner(userId) && isValidUserPrivateAccount(incoming());
-    }
-
-    // User Stats
+    // User Stats & Elo Ratings
     match /users/{userId}/stats/{docId} {
-      allow read: if isValidId(userId) && isOwner(userId);
-      allow create, update: if isValidId(userId) && isOwner(userId) && isValidId(docId) && isValidUserStats(incoming());
-      allow delete: if false;
+      allow read: if true;
+      allow write: if isOwner(userId);
     }
 
     // User Preferences
     match /users/{userId}/preferences/{docId} {
-      allow read: if isValidId(userId) && isOwner(userId);
-      allow create, update: if isValidId(userId) && isOwner(userId) && isValidId(docId) && isValidUserPreferences(incoming());
-      allow delete: if false;
+      allow read, write: if isOwner(userId);
     }
 
-    // Match Records (Immutable write-once logs)
+    // Multiplayer Match Records
     match /users/{userId}/matches/{matchId} {
-      allow read: if isValidId(userId) && isOwner(userId);
-      allow create: if isValidId(userId) && isOwner(userId) && isValidId(matchId) && isValidMatch(incoming());
-      allow update, delete: if false;
+      allow read: if true;
+      allow write: if isOwner(userId);
     }
 
-    // Public Leaderboard
+    // Friends List
+    match /users/{userId}/friends/{friendId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Public Real-time Leaderboard (Authoritative: read-only for clients, managed authoritatively by backend server)
     match /public_leaderboard/{userId} {
-      allow read: if isSignedIn();
-      allow create, update: if isValidId(userId) && isOwner(userId) && isValidLeaderboard(incoming());
-      allow delete: if false;
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Friend Requests
+    match /friend_requests/{requestId} {
+      allow read: if isAuthenticated() && (
+        resource.data.fromUserId == request.auth.uid || 
+        resource.data.toUserId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && 
+        request.resource.data.fromUserId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.fromUserId == request.auth.uid || 
+        resource.data.toUserId == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && (
+        resource.data.fromUserId == request.auth.uid || 
+        resource.data.toUserId == request.auth.uid
+      );
+    }
+
+    // Direct Messages (Subcollection of direct_chats)
+    match /direct_chats/{chatId} {
+      allow read, write: if isAuthenticated();
+      
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (
+          resource.data.senderId == request.auth.uid ||
+          resource.data.recipientId == request.auth.uid
+        );
+        allow create: if isAuthenticated() && 
+          request.resource.data.senderId == request.auth.uid;
+        allow update: if isAuthenticated() && (
+          resource.data.senderId == request.auth.uid ||
+          resource.data.recipientId == request.auth.uid
+        );
+        allow delete: if isAuthenticated() && 
+          resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // Game Challenges
+    match /game_challenges/{challengeId} {
+      allow read: if isAuthenticated() && (
+        resource.data.challengerId == request.auth.uid ||
+        resource.data.challengedId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && 
+        request.resource.data.challengerId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.challengerId == request.auth.uid ||
+        resource.data.challengedId == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && (
+        resource.data.challengerId == request.auth.uid ||
+        resource.data.challengedId == request.auth.uid
+      );
+    }
+
+    // User Presence & Online Status
+    match /user_presence/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
     }
   }
 }

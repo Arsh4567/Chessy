@@ -54,6 +54,10 @@ export interface MultiplayerRoomState {
   drawOfferedBy: 'w' | 'b' | null;
   rematchOfferedBy: 'w' | 'b' | null;
   chat: MultiplayerChatMessage[];
+  lastMoveTimestamp?: number;
+  serverTime?: number;
+  isPrivate?: boolean;
+  allowedPlayerIds?: string[];
 }
 
 export type ClientMultiplayerEvent =
@@ -63,8 +67,11 @@ export type ClientMultiplayerEvent =
       playerName: string; 
       preferredColor?: 'w' | 'b' | 'random'; 
       playerId?: string;
+      authToken?: string;
       playerRating?: number;
       gamesPlayed?: number;
+      passcode?: string;
+      allowedPlayerIds?: string[];
     }
   | { type: 'move'; roomId: string; from: string; to: string; promotion?: string }
   | { type: 'resign'; roomId: string }
@@ -76,7 +83,7 @@ export type ClientMultiplayerEvent =
   | { type: 'chat'; roomId: string; text: string };
 
 export type ServerMultiplayerEvent =
-  | { type: 'room_state'; state: MultiplayerRoomState; yourRole: MultiplayerRole; yourId: string }
+  | { type: 'room_state'; state: MultiplayerRoomState; yourRole: MultiplayerRole; yourId: string; serverTime: number }
   | { 
       type: 'move_made'; 
       from: string; 
@@ -88,7 +95,19 @@ export type ServerMultiplayerEvent =
       blackTimeMs: number; 
       isCheck: boolean; 
       isGameOver: boolean; 
-      gameOver: MultiplayerGameOver | null 
+      gameOver: MultiplayerGameOver | null;
+      lastMoveTimestamp: number;
+      serverTime: number;
+    }
+  | { 
+      type: 'clock_sync'; 
+      roomId: string; 
+      whiteTimeMs: number; 
+      blackTimeMs: number; 
+      turn: 'w' | 'b'; 
+      lastMoveTimestamp: number; 
+      serverTime: number; 
+      isGameActive: boolean 
     }
   | { type: 'presence'; whiteConnected: boolean; blackConnected: boolean; spectatorsCount: number; whiteName?: string; blackName?: string; whiteRating?: number; blackRating?: number }
   | { type: 'opponent_joined'; player: { name: string; color: 'w' | 'b'; rating: number; gamesPlayed: number } }

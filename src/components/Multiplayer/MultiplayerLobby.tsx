@@ -4,20 +4,12 @@ import { loadUserStats } from '../../utils/storage';
 import { INITIAL_RATING, getEloTier } from '../../utils/eloRating';
 import { 
   Users, 
-  Swords, 
   Clock, 
   ArrowLeftRight, 
-  Sparkles, 
-  Share2, 
-  Copy, 
-  Check, 
   Play, 
-  Shield, 
   Key,
-  Zap,
-  Award,
-  TrendingUp,
-  HelpCircle
+  HelpCircle,
+  Sparkles
 } from 'lucide-react';
 
 interface MultiplayerLobbyProps {
@@ -38,11 +30,19 @@ const PRESET_TIME_CONTROLS: MultiplayerTimeControl[] = [
 
 function generateRandomRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let res = 'GM-';
-  for (let i = 0; i < 4; i++) {
-    res += chars.charAt(Math.floor(Math.random() * chars.length));
+  const array = new Uint8Array(12);
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+    window.crypto.getRandomValues(array);
+  } else {
+    for (let i = 0; i < 12; i++) array[i] = Math.floor(Math.random() * 256);
   }
-  return res;
+  let segment1 = '';
+  let segment2 = '';
+  let segment3 = '';
+  for (let i = 0; i < 4; i++) segment1 += chars[array[i] % chars.length];
+  for (let i = 4; i < 8; i++) segment2 += chars[array[i] % chars.length];
+  for (let i = 8; i < 12; i++) segment3 += chars[array[i] % chars.length];
+  return `GM-${segment1}-${segment2}-${segment3}`;
 }
 
 export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
@@ -83,45 +83,45 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6 animate-in fade-in duration-300">
+    <div className="max-w-4xl mx-auto px-4 py-6 space-y-6 animate-in fade-in duration-300 pb-20 md:pb-10">
       {/* Hero Header */}
-      <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
-        <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-sky-400">
+      <div className="p-6 sm:p-8 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-2 text-xs font-semibold text-sky-400">
             <Users className="w-4 h-4" />
             <span>Real-Time Online Multiplayer</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black font-display text-white">
+          <h1 className="text-2xl sm:text-3xl font-bold font-display text-white">
             Play with Friends Online
           </h1>
-          <p className="text-xs sm:text-sm text-slate-400 max-w-lg">
-            Create a live match room, share the invite link with any friend, and play with server-synchronized clocks, realistic Staunton pieces, and advance Elo rating calculation.
+          <p className="text-sm text-slate-400 max-w-lg">
+            Create a live match room, share the invite link with a friend, and play with server-synchronized clocks and advance Elo rating tracking.
           </p>
         </div>
 
-        <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/25 flex items-center justify-center text-3xl shrink-0 text-sky-400 shadow-lg">
+        <div className="w-14 h-14 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-3xl shrink-0 text-sky-400">
           ⚔️
         </div>
       </div>
 
       {/* Advance Elo Rating & Placement Progression Card */}
-      <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl space-y-3">
+      <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-2xl shrink-0">
+            <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-2xl shrink-0">
               {tier.icon}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-400">Multiplayer Elo Rating</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${tier.badgeColor}`}>
+                <span className="text-xs font-semibold text-slate-400">Multiplayer Rating</span>
+                <span className="text-xs font-bold text-amber-400">
                   {tier.name}
                 </span>
               </div>
-              <div className="text-xl sm:text-2xl font-black font-mono text-white mt-0.5 flex items-baseline gap-2">
+              <div className="text-xl sm:text-2xl font-bold font-mono text-white mt-0.5 flex items-baseline gap-2">
                 <span>{currentRating}</span>
                 <span className="text-xs font-normal text-slate-400">Elo</span>
-                <span className="text-xs font-mono text-slate-500 font-normal">
+                <span className="text-xs font-mono text-slate-400 font-normal">
                   ({stats.multiplayerWins}W · {stats.multiplayerLosses}L · {stats.multiplayerDraws}D)
                 </span>
               </div>
@@ -133,28 +133,18 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
             className="text-xs text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1.5 cursor-pointer self-start sm:self-center"
           >
             <HelpCircle className="w-3.5 h-3.5" />
-            <span>{showEloInfo ? 'Hide Elo Rules' : 'How Rating Works'}</span>
+            <span>{showEloInfo ? 'Hide Rating Rules' : 'How Elo Works'}</span>
           </button>
         </div>
 
         {/* 7-Match Placement Progress Bar */}
         <div className="pt-2 border-t border-slate-800/80 space-y-2">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-bold text-slate-300 flex items-center gap-1.5">
-              {isProvisional ? (
-                <>
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="text-amber-300">Placement Phase: Match {gamesPlayed + 1} of 7</span>
-                </>
-              ) : (
-                <>
-                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-300">Established Rating Phase ({gamesPlayed} matches played)</span>
-                </>
-              )}
+            <span className="font-semibold text-slate-300">
+              {isProvisional ? `Placement Phase: Match ${gamesPlayed + 1} of 7` : `Established Rating (${gamesPlayed} matches)`}
             </span>
-            <span className="text-[11px] font-mono text-slate-400">
-              {isProvisional ? 'Drastic Volatility (±100 Elo)' : 'Stable Adjustments (±7 to ±8 Elo)'}
+            <span className="text-xs font-mono text-slate-400">
+              {isProvisional ? 'Placement Volatility (±100 Elo)' : 'Established Rate (±7 to ±8 Elo)'}
             </span>
           </div>
 
@@ -180,54 +170,53 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           </div>
 
           {showEloInfo && (
-            <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-300 space-y-1.5 animate-in fade-in">
-              <div className="font-bold text-white flex items-center gap-1.5">
+            <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-300 space-y-2 animate-in fade-in">
+              <div className="font-semibold text-white flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>Advance Elo Calculation System</span>
+                <span>Advance Elo Rating System</span>
               </div>
-              <ul className="list-disc list-inside space-y-1 text-slate-400 text-[11px]">
+              <ul className="list-disc list-inside space-y-1 text-slate-400 text-xs">
                 <li><strong className="text-slate-200">Starting Rating:</strong> All players start at <strong>800 Elo</strong>.</li>
-                <li><strong className="text-amber-300">First 7 Matches (Placement):</strong> Win awards <strong>around +100 Elo</strong>, Loss subtracts <strong>around -100 Elo</strong>, Draw awards <strong>0 Elo</strong>.</li>
-                <li><strong className="text-sky-300">Match 8 and Beyond (Established):</strong> Win awards <strong>+7 to +8 Elo</strong>, Loss subtracts <strong>-7 to -8 Elo</strong>, Draw results in <strong>0 Elo</strong>.</li>
-                <li>Stats and match logs update automatically on both client and server upon match completion.</li>
+                <li><strong className="text-amber-300">First 7 Matches (Placement):</strong> Win awards <strong>around +100 Elo</strong>, Loss subtracts <strong>around -100 Elo</strong>.</li>
+                <li><strong className="text-sky-300">Established Matches (8+):</strong> Win awards <strong>+7 to +8 Elo</strong>, Loss subtracts <strong>-7 to -8 Elo</strong>.</li>
               </ul>
             </div>
           )}
         </div>
       </div>
 
-      {/* Player Identity Bar */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Player Handle Bar */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-0.5">
-          <label className="text-xs font-bold text-slate-300">Your Player Handle</label>
-          <p className="text-[11px] text-slate-500">Name shown to your opponent, room spectators, and leaderboard</p>
+          <label className="text-xs font-semibold text-slate-200">Your Player Name</label>
+          <p className="text-xs text-slate-400">Display name shown during match and in room chat</p>
         </div>
 
         <input
           type="text"
           value={playerName}
           onChange={(e) => handleNameChange(e.target.value)}
-          placeholder="Your nickname..."
+          placeholder="Your name..."
           maxLength={24}
-          className="w-full sm:w-64 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-bold text-white focus:outline-none focus:border-sky-400 transition-colors"
+          className="w-full sm:w-64 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold text-white focus:outline-none focus:border-sky-400 transition-colors"
         />
       </div>
 
       {/* Main Grid: Create Match vs Join Match */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
         {/* Create Match Card (7 cols) */}
-        <div className="md:col-span-7 p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-6">
+        <div className="md:col-span-7 p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-6">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-sky-400" />
-              <span>Create New Match Room</span>
+              <Users className="w-4 h-4 text-sky-400" />
+              <span>Create Match Room</span>
             </h2>
-            <span className="text-[10px] font-mono text-slate-500">Instant Link</span>
+            <span className="text-xs font-mono text-slate-400">Instant Link</span>
           </div>
 
           {/* Time Control Options */}
           <div className="space-y-2.5">
-            <label className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-sky-400" />
               <span>Time Control</span>
             </label>
@@ -240,12 +229,12 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                     onClick={() => setSelectedTimeControl(tc)}
                     className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-sky-500 text-slate-950 border-sky-400 font-bold shadow-md shadow-sky-500/20'
-                        : 'bg-slate-950/60 hover:bg-slate-850 text-slate-300 border-slate-800'
+                        ? 'bg-sky-500 text-slate-950 border-sky-400 font-bold shadow-sm'
+                        : 'bg-slate-950/60 hover:bg-slate-800 text-slate-300 border-slate-800'
                     }`}
                   >
                     <div className="text-xs font-bold">{tc.name.split('•')[0].trim()}</div>
-                    <div className="text-[10px] font-mono opacity-80 mt-0.5">{tc.name.split('•')[1]?.trim() || ''}</div>
+                    <div className="text-xs font-mono opacity-80 mt-0.5">{tc.name.split('•')[1]?.trim() || ''}</div>
                   </button>
                 );
               })}
@@ -254,9 +243,9 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
 
           {/* Side Preference */}
           <div className="space-y-2.5">
-            <label className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
               <ArrowLeftRight className="w-3.5 h-3.5 text-sky-400" />
-              <span>Starting Side Preference</span>
+              <span>Starting Color</span>
             </label>
             <div className="grid grid-cols-3 gap-2">
               {[
@@ -271,8 +260,8 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                     onClick={() => setSelectedColor(side.id)}
                     className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
                       isSelected
-                        ? 'bg-slate-800 border-sky-500/60 ring-1 ring-sky-500/40 text-white font-bold'
-                        : 'bg-slate-950/60 hover:bg-slate-850 text-slate-400 border-slate-800'
+                        ? 'bg-slate-800 border-sky-400 text-white font-bold'
+                        : 'bg-slate-950/60 hover:bg-slate-800 text-slate-400 border-slate-800'
                     }`}
                   >
                     <span className="text-lg">{side.icon}</span>
@@ -286,23 +275,23 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           {/* Launch Room Button */}
           <button
             onClick={handleCreateRoom}
-            className="w-full py-3.5 rounded-2xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20"
+            className="w-full py-3.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-sky-500/20 active:scale-95"
           >
             <Play className="w-4 h-4 fill-slate-950" />
-            <span>Create Live Match & Invite Friend</span>
+            <span>Create Match & Share Link</span>
           </button>
         </div>
 
         {/* Join Match Card (5 cols) */}
         <div className="md:col-span-5 space-y-4">
-          <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-4">
+          <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
             <div className="border-b border-slate-800 pb-3">
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <Key className="w-4 h-4 text-amber-400" />
                 <span>Join with Room Code</span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Have an invite code from a friend? Enter it below:
+                Enter an invite code from your opponent:
               </p>
             </div>
 
@@ -312,9 +301,8 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                   type="text"
                   value={roomCodeInput}
                   onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
-                  placeholder="e.g. GM-4921"
-                  maxLength={12}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold tracking-widest text-center text-sky-400 placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors uppercase"
+                  placeholder="e.g. GM-4921-8201-9281"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold tracking-wider text-center text-sky-400 placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors uppercase"
                 />
               </div>
 
@@ -330,10 +318,10 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
 
           {/* Local Pass & Play Switcher */}
           {onSwitchToLocalPassAndPlay && (
-            <div className="p-5 rounded-3xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-3">
+            <div className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <span className="text-xs font-bold text-slate-200 block">Playing on Same Device?</span>
-                <span className="text-[11px] text-slate-500 block">Use Pass & Play with auto board flipping</span>
+                <span className="text-xs font-semibold text-slate-200 block">Playing on Same Screen?</span>
+                <span className="text-xs text-slate-400 block">Use Pass & Play with auto board flipping</span>
               </div>
               <button
                 onClick={onSwitchToLocalPassAndPlay}

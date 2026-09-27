@@ -9,7 +9,7 @@ import {
   loadUserStatsFromFirestore, 
   saveUserPreferencesToFirestore, 
   loadUserPreferencesFromFirestore, 
-  recordMatchToFirestore,
+  recordMultiplayerGameTransaction,
   loadMatchHistoryFromFirestore
 } from '../firebase/firestoreService';
 import { auth } from '../firebase/config';
@@ -285,14 +285,17 @@ export function recordMultiplayerGameResult(params: {
   inMemoryStats.multiplayerHistory.unshift(matchRecord);
   if (inMemoryStats.multiplayerHistory.length > 50) inMemoryStats.multiplayerHistory.pop();
 
-  // Persist directly to Firebase Firestore
+  // Persist atomically to Firebase Firestore using atomic transaction
   const uid = getActiveFirebaseUserId();
   if (uid) {
-    saveUserStatsToFirestore(uid, inMemoryStats).catch((err) => {
-      console.warn('Firebase multiplayer stats save error:', err);
-    });
-    recordMatchToFirestore(uid, matchRecord).catch((err) => {
-      console.warn('Firebase match log save error:', err);
+    recordMultiplayerGameTransaction(uid, matchRecord, {
+      result: params.result,
+      ratingBefore: currentRating,
+      ratingAfter: newRating,
+      ratingDelta,
+      isProvisional: calc.isProvisional,
+    }).catch((err) => {
+      console.warn('Firebase atomic multiplayer transaction error:', err);
     });
   }
 

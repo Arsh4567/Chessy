@@ -3,15 +3,14 @@ import { Chess } from 'chess.js';
 import {
   MultiplayerRoomState,
   MultiplayerRole,
-  MultiplayerTimeControl,
   MultiplayerChatMessage,
   ServerMultiplayerEvent,
   ClientMultiplayerEvent,
   MultiplayerGameOver,
 } from '../types/multiplayer';
 import { sound } from '../utils/sound';
-import { loadUserStats, recordMultiplayerGameResult, UserStats, getActiveFirebaseUserId } from '../utils/storage';
-import { INITIAL_RATING, getEloTier } from '../utils/eloRating';
+import { loadUserStats, recordMultiplayerGameResult, UserStats } from '../utils/storage';
+import { INITIAL_RATING } from '../utils/eloRating';
 import { auth } from '../firebase/config';
 
 export interface MultiplayerGameRatingSummary {
@@ -31,11 +30,23 @@ export interface UseMultiplayerGameOptions {
   onStatsUpdated?: (stats: UserStats) => void;
 }
 
+interface ServerClockSnapshot {
+  whiteTimeMs: number;
+  blackTimeMs: number;
+  lastMoveTimestamp: number;
+  serverTime: number;
+  turn: 'w' | 'b';
+  isGameActive: boolean;
+  gameOver: boolean;
+  clientTimeAtSnapshot: number;
+}
+
 export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
   const [connected, setConnected] = useState<boolean>(false);
   const [roomState, setRoomState] = useState<MultiplayerRoomState | null>(null);
   const [myRole, setMyRole] = useState<MultiplayerRole>('spectator');
   const [myPlayerId, setMyPlayerId] = useState<string>(() => {
+    if (auth.currentUser?.uid) return auth.currentUser.uid;
     return localStorage.getItem('gm_multiplayer_player_id') || `p_${Math.random().toString(36).substring(2, 9)}`;
   });
   const [chess, setChess] = useState<Chess>(() => new Chess());
@@ -60,13 +71,48 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
   const onStatsUpdatedRef = useRef(options.onStatsUpdated);
   onStatsUpdatedRef.current = options.onStatsUpdated;
 
+  // Authoritative server clock snapshot
+  const serverClockSnapshotRef = useRef<ServerClockSnapshot>({
+    whiteTimeMs: 300000,
+    blackTimeMs: 300000,
+    lastMoveTimestamp: Date.now(),
+    serverTime: Date.now(),
+    turn: 'w',
+    isGameActive: false,
+    gameOver: false,
+    clientTimeAtSnapshot: Date.now(),
+  });
+
   // Track recorded games to prevent duplicate rating calculations
   const recordedMatchKeysRef = useRef<Set<string>>(new Set());
 
-  // Persist playerId so user can reconnect seamlessly
+  // Update playerId when Firebase auth state changes
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((user) => {
+      if (user?.uid) {
+        setMyPlayerId(user.uid);
+        localStorage.setItem('gm_multiplayer_player_id', user.uid);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Persist playerId
   useEffect(() => {
     localStorage.setItem('gm_multiplayer_player_id', myPlayerId);
   }, [myPlayerId]);
+
+  // Helper to obtain Firebase auth token for server-side session binding
+  const getAuthToken = useCallback(async (): Promise<string | undefined> => {
+    if (auth.currentUser) {
+      try {
+        return await auth.currentUser.getIdToken();
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  }, []);
 
   // Processes game over and records the advance Elo rating transition
   const handleGameOverRecord = useCallback((
@@ -92,6 +138,7 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
     const opponentName = opp?.name || (role === 'white' ? 'Black' : 'White');
     const opponentRating = opp?.rating ?? INITIAL_RATING;
 
+    // Use authoritative server-calculated rating deltas
     const serverRatingDelta = role === 'white' ? gameOver.whiteRatingDelta : gameOver.blackRatingDelta;
     const serverNewRating = role === 'white' ? gameOver.whiteRating : gameOver.blackRating;
 
@@ -140,21 +187,20 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
-    ws.onopen = () => {
+    ws.onopen = async () => {
       setConnected(true);
       setErrorMessage(null);
 
-      // If we were already in a room, re-join immediately with latest stats
+      // If re-joining an active room, authenticate and join seamlessly
       if (lastStateRef.current?.roomId) {
-        const savedName = localStorage.getItem('gm_player_name') || 'Grandmaster';
-        const currentStats = loadUserStats();
+        const savedName = auth.currentUser?.displayName || localStorage.getItem('gm_player_name') || 'Grandmaster';
+        const token = await getAuthToken();
         const msg: ClientMultiplayerEvent = {
           type: 'join_room',
           roomId: lastStateRef.current.roomId,
           playerName: savedName,
-          playerId: myPlayerId,
-          playerRating: currentStats.multiplayerRating ?? INITIAL_RATING,
-          gamesPlayed: currentStats.multiplayerGamesPlayed ?? 0,
+          playerId: auth.currentUser?.uid || myPlayerId,
+          authToken: token,
         };
         ws.send(JSON.stringify(msg));
       }
@@ -171,7 +217,7 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
 
     ws.onclose = () => {
       setConnected(false);
-      // Auto-reconnect after 2.5 seconds
+      // Auto-reconnect
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = setTimeout(() => {
         connectSocket();
@@ -181,7 +227,7 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
     ws.onerror = (err) => {
       console.warn('[Multiplayer Client] WebSocket error:', err);
     };
-  }, [myPlayerId]);
+  }, [myPlayerId, getAuthToken]);
 
   useEffect(() => {
     connectSocket();
@@ -192,12 +238,26 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
   }, [connectSocket]);
 
   const handleServerEvent = (event: ServerMultiplayerEvent) => {
+    const now = Date.now();
+
     switch (event.type) {
       case 'room_state': {
         setRoomState(event.state);
         setMyRole(event.yourRole);
         myRoleRef.current = event.yourRole;
         setMyPlayerId(event.yourId);
+
+        serverClockSnapshotRef.current = {
+          whiteTimeMs: event.state.whiteTimeMs,
+          blackTimeMs: event.state.blackTimeMs,
+          lastMoveTimestamp: event.state.lastMoveTimestamp || event.serverTime || now,
+          serverTime: event.serverTime || now,
+          turn: event.state.turn,
+          isGameActive: event.state.isGameActive,
+          gameOver: Boolean(event.state.gameOver),
+          clientTimeAtSnapshot: now,
+        };
+
         setWhiteDisplayTimeMs(event.state.whiteTimeMs);
         setBlackDisplayTimeMs(event.state.blackTimeMs);
 
@@ -206,7 +266,6 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
           setChess(nextChess);
           chessRef.current = nextChess;
 
-          // If joining an already finished game
           if (event.state.gameOver) {
             handleGameOverRecord(event.state.gameOver, nextChess, event.state, event.yourRole);
           }
@@ -215,6 +274,17 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
       }
 
       case 'move_made': {
+        serverClockSnapshotRef.current = {
+          whiteTimeMs: event.whiteTimeMs,
+          blackTimeMs: event.blackTimeMs,
+          lastMoveTimestamp: event.lastMoveTimestamp || event.serverTime || now,
+          serverTime: event.serverTime || now,
+          turn: event.turn,
+          isGameActive: !event.isGameOver,
+          gameOver: event.isGameOver,
+          clientTimeAtSnapshot: now,
+        };
+
         setWhiteDisplayTimeMs(event.whiteTimeMs);
         setBlackDisplayTimeMs(event.blackTimeMs);
 
@@ -240,9 +310,9 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
             isGameActive: !event.isGameOver,
             gameOver: event.gameOver,
             drawOfferedBy: null,
+            lastMoveTimestamp: event.lastMoveTimestamp,
           };
 
-          // If game just completed, trigger authoritative Elo rating update!
           if (event.isGameOver && event.gameOver) {
             handleGameOverRecord(event.gameOver, nextChessInstance, updatedState, myRoleRef.current);
           }
@@ -250,7 +320,6 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
           return updatedState;
         });
 
-        // Audio feedback
         if (event.isGameOver) {
           sound.playGameOver();
         } else if (event.isCheck) {
@@ -258,6 +327,22 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
         } else {
           sound.playMove();
         }
+        break;
+      }
+
+      case 'clock_sync': {
+        serverClockSnapshotRef.current = {
+          whiteTimeMs: event.whiteTimeMs,
+          blackTimeMs: event.blackTimeMs,
+          lastMoveTimestamp: event.lastMoveTimestamp,
+          serverTime: event.serverTime,
+          turn: event.turn,
+          isGameActive: event.isGameActive,
+          gameOver: false,
+          clientTimeAtSnapshot: now,
+        };
+        setWhiteDisplayTimeMs(event.whiteTimeMs);
+        setBlackDisplayTimeMs(event.blackTimeMs);
         break;
       }
 
@@ -272,7 +357,7 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
                 id: 'opp', 
                 name: event.player.name, 
                 connected: true, 
-                color: 'w',
+                color: 'w', 
                 rating: event.player.rating,
                 gamesPlayed: event.player.gamesPlayed,
               },
@@ -285,7 +370,7 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
                 id: 'opp', 
                 name: event.player.name, 
                 connected: true, 
-                color: 'b',
+                color: 'b', 
                 rating: event.player.rating,
                 gamesPlayed: event.player.gamesPlayed,
               },
@@ -339,7 +424,19 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
         setDrawOfferReceived(false);
         setRematchOfferReceived(false);
         setLastMove(null);
-        setLastGameRatingSummary(null); // Clear previous match summary for new game
+        setLastGameRatingSummary(null);
+
+        serverClockSnapshotRef.current = {
+          whiteTimeMs: event.state.whiteTimeMs,
+          blackTimeMs: event.state.blackTimeMs,
+          lastMoveTimestamp: event.state.lastMoveTimestamp || now,
+          serverTime: event.state.serverTime || now,
+          turn: event.state.turn,
+          isGameActive: event.state.isGameActive,
+          gameOver: false,
+          clientTimeAtSnapshot: now,
+        };
+
         setWhiteDisplayTimeMs(event.state.whiteTimeMs);
         setBlackDisplayTimeMs(event.state.blackTimeMs);
 
@@ -349,7 +446,6 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
           chessRef.current = nextChess;
         } catch {}
 
-        // Re-check our role since colors swapped
         let nextRole: MultiplayerRole = 'spectator';
         if (event.state.white?.id === myPlayerId) {
           nextRole = 'white';
@@ -381,22 +477,32 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
     }
   };
 
-  // Clock countdown ticker on client for ultra-smooth UI
+  // Authoritative server-clock synchronization ticker: updates display times without clock drift
   useEffect(() => {
     if (!roomState?.isGameActive || roomState.gameOver) return;
     if (roomState.timeControl.initialSeconds <= 0) return; // Unlimited
 
     const interval = setInterval(() => {
-      const turn = chess.turn();
-      if (turn === 'w') {
-        setWhiteDisplayTimeMs((prev) => Math.max(0, prev - 100));
-      } else {
-        setBlackDisplayTimeMs((prev) => Math.max(0, prev - 100));
+      const snap = serverClockSnapshotRef.current;
+      if (!snap.isGameActive || snap.gameOver) {
+        setWhiteDisplayTimeMs(snap.whiteTimeMs);
+        setBlackDisplayTimeMs(snap.blackTimeMs);
+        return;
       }
-    }, 100);
+
+      const elapsedSinceSnapshot = Math.max(0, Date.now() - snap.clientTimeAtSnapshot);
+
+      if (snap.turn === 'w') {
+        setWhiteDisplayTimeMs(Math.max(0, snap.whiteTimeMs - elapsedSinceSnapshot));
+        setBlackDisplayTimeMs(snap.blackTimeMs);
+      } else {
+        setWhiteDisplayTimeMs(snap.whiteTimeMs);
+        setBlackDisplayTimeMs(Math.max(0, snap.blackTimeMs - elapsedSinceSnapshot));
+      }
+    }, 50);
 
     return () => clearInterval(interval);
-  }, [roomState?.isGameActive, roomState?.gameOver, chess]);
+  }, [roomState?.isGameActive, roomState?.gameOver, roomState?.timeControl.initialSeconds]);
 
   // Client commands
   const sendEvent = useCallback((event: ClientMultiplayerEvent) => {
@@ -408,20 +514,21 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
   }, []);
 
   const joinRoom = useCallback(
-    (roomId: string, playerName: string, preferredColor?: 'w' | 'b' | 'random') => {
+    async (roomId: string, playerName: string, preferredColor?: 'w' | 'b' | 'random') => {
       const cleanId = roomId.trim().toUpperCase();
-      const currentStats = loadUserStats();
+      const token = await getAuthToken();
+      const authUid = auth.currentUser?.uid;
+
       sendEvent({
         type: 'join_room',
         roomId: cleanId,
         playerName: playerName.trim(),
         preferredColor,
-        playerId: myPlayerId,
-        playerRating: currentStats.multiplayerRating ?? INITIAL_RATING,
-        gamesPlayed: currentStats.multiplayerGamesPlayed ?? 0,
+        playerId: authUid || myPlayerId,
+        authToken: token,
       });
     },
-    [sendEvent, myPlayerId]
+    [sendEvent, myPlayerId, getAuthToken]
   );
 
   const makeMove = useCallback(
@@ -437,7 +544,7 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
         const res = nextChess.move(move);
         if (!res) return false;
 
-        // Dispatch authoritative move command to server
+        // Dispatch move command to authoritative server
         sendEvent({
           type: 'move',
           roomId: roomState.roomId,

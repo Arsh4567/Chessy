@@ -23,9 +23,13 @@ import { Navbar, NavTab } from './components/Navigation/Navbar';
 import { GameOverModal } from './components/Game/GameOverModal';
 import { ActiveMatchView } from './components/Game/ActiveMatchView';
 import { CustomFenModal } from './components/Game/CustomFenModal';
+import { IncomingChallengeToast } from './components/Friends/IncomingChallengeToast';
+import { GlobalPushToast } from './components/Notifications/GlobalPushToast';
+import { initPushNotificationScheduler } from './utils/pushNotifications';
 import { fetchChessComRecentGames, ChessComGame, ChessComPlayer } from './utils/chessComApi';
 import { useChessGame } from './hooks/useChessGame';
 import { Home, Swords, Zap, BookOpen, Search, Users } from 'lucide-react';
+import { TimeControl, PieceColor } from './types/chess';
 
 // Lazy loaded views to minimize initial bundle size and main-thread execution
 const HomeView = React.lazy(() =>
@@ -69,7 +73,11 @@ export default function App() {
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showFenModal, setShowFenModal] = useState<boolean>(false);
 
-  // Sync user stats & preferences with Firebase Firestore
+  // Initialize Web Push Notifications scheduler
+  useEffect(() => {
+    const cleanup = initPushNotificationScheduler();
+    return cleanup;
+  }, []);
   useEffect(() => {
     const targetUid = user ? user.uid : getActiveFirebaseUserId();
     if (user?.uid) {
@@ -548,6 +556,17 @@ export default function App() {
           />
         </React.Suspense>
       )}
+
+      {/* Incoming Live Game Challenge Global Toast */}
+      <IncomingChallengeToast
+        onAcceptChallenge={(tc, color, roomId) => {
+          setMultiplayerRoomCode(roomId);
+          setActiveTab('friends');
+        }}
+      />
+
+      {/* Cross-Browser & In-App Web Push Notification Toast */}
+      <GlobalPushToast onNavigateTab={(tab) => setActiveTab(tab as any)} />
 
       {/* Game Over Modal */}
       <GameOverModal

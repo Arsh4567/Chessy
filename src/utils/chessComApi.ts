@@ -237,11 +237,11 @@ export async function fetchChessComRecentGames(
     return result;
   }
 
-  // Fetch the most recent archives first (up to last 2 months if needed to satisfy limit)
+  // Fetch monthly archives starting from the most recent, continuing into older archives until limit is reached
   const rawGames: any[] = [];
-  const recentArchives = archives.slice(-2).reverse();
+  const reversedArchives = archives.slice().reverse();
 
-  for (const archiveUrl of recentArchives) {
+  for (const archiveUrl of reversedArchives) {
     try {
       const monthRes = await fetch(archiveUrl, {
         headers: {
@@ -251,7 +251,7 @@ export async function fetchChessComRecentGames(
       if (monthRes.ok) {
         const monthData = await monthRes.json();
         const monthGames: any[] = monthData.games || [];
-        // Newer games are at the end of the month array, so we reverse it
+        // Newer games are at the end of the monthly array, so reverse to have newest first
         rawGames.push(...monthGames.reverse());
         if (rawGames.length >= limit) break;
       }

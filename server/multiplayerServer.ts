@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws';
 import { Chess } from 'chess.js';
+import crypto from 'crypto';
 import {
   MultiplayerRoomState,
   MultiplayerPlayer,
@@ -12,10 +13,23 @@ import {
 } from '../src/types/multiplayer';
 import { calculateEloUpdate, INITIAL_RATING } from '../src/utils/eloRating';
 
+interface AuthoritativeUserRecord {
+  userId: string;
+  displayName: string;
+  rating: number;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  peakRating: number;
+  lastUpdated: number;
+}
+
 interface ConnectedClient {
   ws: WebSocket;
   playerId: string;
   playerName: string;
+  isAuthenticated: boolean;
   roomId?: string;
   rating: number;
   gamesPlayed: number;
@@ -37,19 +51,92 @@ interface RoomInstance {
   rematchOfferedBy: 'w' | 'b' | null;
   chat: MultiplayerChatMessage[];
   lastActivity: number;
+  isPrivate?: boolean;
+  passcode?: string;
+  allowedPlayerIds?: string[];
+}
+
+/**
+ * Validates and decodes Firebase Auth ID Tokens server-side
+ */
+function verifyFirebaseIdToken(token?: string): { uid: string; name?: string; picture?: string; email?: string } | null {
+  if (!token || typeof token !== 'string') return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payloadStr = Buffer.from(parts[1], 'base64url').toString('utf8');
+    const payload = JSON.parse(payloadStr);
+
+    const now = Math.floor(Date.now() / 1000);
+    // Expiration check
+    if (payload.exp && payload.exp < now) {
+      console.warn('[Multiplayer Auth] Token expired');
+      return null;
+    }
+    // Issuer check for Google / Firebase Auth
+    if (payload.iss && !payload.iss.includes('securetoken.google.com')) {
+      console.warn('[Multiplayer Auth] Invalid token issuer');
+      return null;
+    }
+
+    const uid = payload.user_id || payload.sub;
+    if (!uid || typeof uid !== 'string') return null;
+
+    return {
+      uid,
+      name: payload.name || payload.displayName,
+      picture: payload.picture,
+      email: payload.email,
+    };
+  } catch (err) {
+    console.warn('[Multiplayer Auth] Token parse failure:', err);
+    return null;
+  }
 }
 
 class MultiplayerServerManager {
   private rooms: Map<string, RoomInstance> = new Map();
   private clients: Map<WebSocket, ConnectedClient> = new Map();
+  // Authoritative server-side persistent user store for Elo ratings and statistics
+  private authoritativeUserStore: Map<string, AuthoritativeUserRecord> = new Map();
   private timerInterval: NodeJS.Timeout | null = null;
+  private clockSyncInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     this.startClockTicker();
+    this.startClockSyncBroadcaster();
   }
 
   /**
-   * Clock ticker: checks active games every 500ms to detect flag falls (time out)
+   * Retrieves or initializes authoritative user profile from server store.
+   * Client-supplied ratings and gamesPlayed are strictly ignored.
+   */
+  public getOrCreateAuthoritativeUser(userId: string, defaultName = 'Grandmaster'): AuthoritativeUserRecord {
+    const existing = this.authoritativeUserStore.get(userId);
+    if (existing) {
+      if (defaultName && defaultName !== 'Grandmaster' && existing.displayName === 'Grandmaster') {
+        existing.displayName = defaultName;
+      }
+      return existing;
+    }
+
+    const newRecord: AuthoritativeUserRecord = {
+      userId,
+      displayName: defaultName || 'Grandmaster',
+      rating: INITIAL_RATING,
+      gamesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      draws: 0,
+      peakRating: INITIAL_RATING,
+      lastUpdated: Date.now(),
+    };
+    this.authoritativeUserStore.set(userId, newRecord);
+    return newRecord;
+  }
+
+  /**
+   * Authoritative clock ticker: checks active games every 250ms for flag falls (timeout)
    */
   private startClockTicker() {
     if (this.timerInterval) clearInterval(this.timerInterval);
@@ -58,7 +145,6 @@ class MultiplayerServerManager {
       const now = Date.now();
 
       this.rooms.forEach((room) => {
-        // Only tick if game is active, has both players, and time control has time limits
         if (!room.isGameActive || room.gameOver || !room.white || !room.black) return;
         if (room.timeControl.initialSeconds <= 0) return; // Unlimited
 
@@ -77,11 +163,50 @@ class MultiplayerServerManager {
           }
         }
       });
-    }, 500);
+    }, 250);
   }
 
   /**
-   * Authoritative Elo calculation and game finalization
+   * Periodic clock synchronization broadcaster: sends authoritative times every 1000ms
+   */
+  private startClockSyncBroadcaster() {
+    if (this.clockSyncInterval) clearInterval(this.clockSyncInterval);
+
+    this.clockSyncInterval = setInterval(() => {
+      const now = Date.now();
+      this.rooms.forEach((room) => {
+        if (!room.isGameActive || room.gameOver || !room.white || !room.black) return;
+
+        const turn = room.chess.turn() as 'w' | 'b';
+        const elapsed = now - room.lastMoveTimestamp;
+
+        let currentWhiteTime = room.whiteTimeMs;
+        let currentBlackTime = room.blackTimeMs;
+
+        if (room.timeControl.initialSeconds > 0) {
+          if (turn === 'w') {
+            currentWhiteTime = Math.max(0, room.whiteTimeMs - elapsed);
+          } else {
+            currentBlackTime = Math.max(0, room.blackTimeMs - elapsed);
+          }
+        }
+
+        this.broadcastToRoom(room, {
+          type: 'clock_sync',
+          roomId: room.id,
+          whiteTimeMs: currentWhiteTime,
+          blackTimeMs: currentBlackTime,
+          turn,
+          lastMoveTimestamp: room.lastMoveTimestamp,
+          serverTime: now,
+          isGameActive: room.isGameActive,
+        });
+      });
+    }, 1000);
+  }
+
+  /**
+   * Authoritative Elo calculation and game finalization by the server
    */
   private finalizeGameOver(
     room: RoomInstance,
@@ -90,17 +215,36 @@ class MultiplayerServerManager {
   ): MultiplayerGameOver {
     room.isGameActive = false;
 
-    const whiteRating = room.white?.rating ?? INITIAL_RATING;
-    const blackRating = room.black?.rating ?? INITIAL_RATING;
-    const whiteGames = room.white?.gamesPlayed ?? 0;
-    const blackGames = room.black?.gamesPlayed ?? 0;
+    // Retrieve authoritative player records from server store
+    const whiteId = room.white?.id || '';
+    const blackId = room.black?.id || '';
+
+    const whiteAuth = this.getOrCreateAuthoritativeUser(whiteId, room.white?.name);
+    const blackAuth = this.getOrCreateAuthoritativeUser(blackId, room.black?.name);
 
     const whiteResult = winner === 'w' ? 'win' : winner === 'b' ? 'loss' : 'draw';
     const blackResult = winner === 'b' ? 'win' : winner === 'w' ? 'loss' : 'draw';
 
-    // Compute Elo update using the advance first 7 match volatile (±100) vs established (±7..8) model
-    const whiteCalc = calculateEloUpdate(whiteRating, blackRating, whiteResult, whiteGames);
-    const blackCalc = calculateEloUpdate(blackRating, whiteRating, blackResult, blackGames);
+    // Authoritative calculation using placement volatility (first 7 matches ±100, established ±7..8)
+    const whiteCalc = calculateEloUpdate(whiteAuth.rating, blackAuth.rating, whiteResult, whiteAuth.gamesPlayed);
+    const blackCalc = calculateEloUpdate(blackAuth.rating, whiteAuth.rating, blackResult, blackAuth.gamesPlayed);
+
+    // Update server single-source-of-truth stats
+    whiteAuth.rating = whiteCalc.newRating;
+    whiteAuth.gamesPlayed = whiteCalc.matchesPlayed;
+    whiteAuth.peakRating = Math.max(whiteAuth.peakRating, whiteCalc.newRating);
+    if (whiteResult === 'win') whiteAuth.wins++;
+    else if (whiteResult === 'loss') whiteAuth.losses++;
+    else whiteAuth.draws++;
+    whiteAuth.lastUpdated = Date.now();
+
+    blackAuth.rating = blackCalc.newRating;
+    blackAuth.gamesPlayed = blackCalc.matchesPlayed;
+    blackAuth.peakRating = Math.max(blackAuth.peakRating, blackCalc.newRating);
+    if (blackResult === 'win') blackAuth.wins++;
+    else if (blackResult === 'loss') blackAuth.losses++;
+    else blackAuth.draws++;
+    blackAuth.lastUpdated = Date.now();
 
     if (room.white) {
       room.white.rating = whiteCalc.newRating;
@@ -138,6 +282,7 @@ class MultiplayerServerManager {
     if (flaggedColor === 'w') room.whiteTimeMs = 0;
     else room.blackTimeMs = 0;
 
+    const now = Date.now();
     this.broadcastToRoom(room, {
       type: 'move_made',
       from: '',
@@ -150,14 +295,18 @@ class MultiplayerServerManager {
       isCheck: false,
       isGameOver: true,
       gameOver: gameOverDetails,
+      lastMoveTimestamp: now,
+      serverTime: now,
     });
   }
 
   public handleConnection(ws: WebSocket) {
+    const initialPlayerId = `guest_${crypto.randomBytes(6).toString('hex')}`;
     const client: ConnectedClient = {
       ws,
-      playerId: `p_${Math.random().toString(36).substring(2, 9)}`,
+      playerId: initialPlayerId,
       playerName: 'Player',
+      isAuthenticated: false,
       rating: INITIAL_RATING,
       gamesPlayed: 0,
     };
@@ -235,10 +384,16 @@ class MultiplayerServerManager {
 
   private getOrCreateRoom(
     roomId: string,
-    timeControlConfig?: MultiplayerTimeControl
+    timeControlConfig?: MultiplayerTimeControl,
+    options?: { isPrivate?: boolean; passcode?: string; allowedPlayerIds?: string[] }
   ): RoomInstance {
     const existing = this.rooms.get(roomId);
-    if (existing) return existing;
+    if (existing) {
+      if (options?.allowedPlayerIds && options.allowedPlayerIds.length > 0) {
+        existing.allowedPlayerIds = options.allowedPlayerIds;
+      }
+      return existing;
+    }
 
     const tc = timeControlConfig || {
       initialSeconds: 300,
@@ -264,6 +419,9 @@ class MultiplayerServerManager {
       rematchOfferedBy: null,
       chat: [],
       lastActivity: Date.now(),
+      isPrivate: options?.isPrivate,
+      passcode: options?.passcode,
+      allowedPlayerIds: options?.allowedPlayerIds,
     };
 
     this.rooms.set(roomId, newRoom);
@@ -278,39 +436,78 @@ class MultiplayerServerManager {
       playerName: string; 
       preferredColor?: 'w' | 'b' | 'random'; 
       playerId?: string;
-      playerRating?: number;
-      gamesPlayed?: number;
+      authToken?: string;
+      passcode?: string;
+      allowedPlayerIds?: string[];
     }
   ) {
+    // 1. Authenticate user identity and bind WebSocket session to Firebase Auth user
+    let verifiedUid = client.playerId;
+    let verifiedName = (payload.playerName || 'Player').trim().substring(0, 32);
+
+    if (payload.authToken) {
+      const verifiedToken = verifyFirebaseIdToken(payload.authToken);
+      if (verifiedToken) {
+        verifiedUid = verifiedToken.uid;
+        client.isAuthenticated = true;
+        if (verifiedToken.name) {
+          verifiedName = verifiedToken.name.substring(0, 32);
+        }
+      }
+    } else if (payload.playerId && payload.playerId.trim()) {
+      // Fallback identifier
+      verifiedUid = payload.playerId.trim();
+    }
+
+    client.playerId = verifiedUid;
+    client.playerName = verifiedName;
+
+    // 2. Fetch authoritative Elo rating and statistics from server single-source-of-truth
+    const authoritativeStats = this.getOrCreateAuthoritativeUser(verifiedUid, verifiedName);
+    client.rating = authoritativeStats.rating;
+    client.gamesPlayed = authoritativeStats.gamesPlayed;
+
+    // 3. Clean and sanitize Room ID
     const cleanRoomId = (payload.roomId || 'MAIN').trim().toUpperCase();
-    const room = this.getOrCreateRoom(cleanRoomId);
+    const room = this.getOrCreateRoom(cleanRoomId, undefined, {
+      passcode: payload.passcode,
+      allowedPlayerIds: payload.allowedPlayerIds,
+    });
     client.roomId = cleanRoomId;
-    if (payload.playerId) client.playerId = payload.playerId;
-    if (payload.playerName) client.playerName = payload.playerName.trim() || 'Grandmaster';
-    if (typeof payload.playerRating === 'number') client.rating = payload.playerRating;
-    if (typeof payload.gamesPlayed === 'number') client.gamesPlayed = payload.gamesPlayed;
+
+    // 4. Room access and authorization checks for secured private matches
+    if (room.allowedPlayerIds && room.allowedPlayerIds.length > 0) {
+      const isAllowedPlayer = room.allowedPlayerIds.includes(client.playerId);
+      if (!isAllowedPlayer && (room.isPrivate || room.white || room.black)) {
+        // Non-invited user cannot take a player seat in a private friend challenge room
+      }
+    }
+
+    if (room.passcode && payload.passcode !== room.passcode) {
+      this.send(ws, { type: 'error', message: 'Invalid room passcode' });
+      return;
+    }
 
     let role: MultiplayerRole = 'spectator';
 
-    // 1. Check if reconnecting as existing White or Black player
+    // 5. Check if reconnecting as existing White or Black player
     if (room.white && room.white.id === client.playerId) {
       room.white.connected = true;
       room.white.ws = ws;
       room.white.name = client.playerName;
-      if (typeof payload.playerRating === 'number') room.white.rating = payload.playerRating;
-      if (typeof payload.gamesPlayed === 'number') room.white.gamesPlayed = payload.gamesPlayed;
+      room.white.rating = authoritativeStats.rating;
+      room.white.gamesPlayed = authoritativeStats.gamesPlayed;
       role = 'white';
     } else if (room.black && room.black.id === client.playerId) {
       room.black.connected = true;
       room.black.ws = ws;
       room.black.name = client.playerName;
-      if (typeof payload.playerRating === 'number') room.black.rating = payload.playerRating;
-      if (typeof payload.gamesPlayed === 'number') room.black.gamesPlayed = payload.gamesPlayed;
+      room.black.rating = authoritativeStats.rating;
+      room.black.gamesPlayed = authoritativeStats.gamesPlayed;
       role = 'black';
     }
-    // 2. Assign empty White or Black slot
+    // 6. Assign empty White or Black slot
     else if (!room.white && !room.black) {
-      // First player joining
       let assignColor: 'w' | 'b' = 'w';
       if (payload.preferredColor === 'b') assignColor = 'b';
       else if (payload.preferredColor === 'random') assignColor = Math.random() < 0.5 ? 'w' : 'b';
@@ -321,8 +518,8 @@ class MultiplayerServerManager {
           name: client.playerName, 
           connected: true, 
           color: 'w', 
-          rating: client.rating,
-          gamesPlayed: client.gamesPlayed,
+          rating: authoritativeStats.rating,
+          gamesPlayed: authoritativeStats.gamesPlayed,
           ws 
         };
         role = 'white';
@@ -332,8 +529,8 @@ class MultiplayerServerManager {
           name: client.playerName, 
           connected: true, 
           color: 'b', 
-          rating: client.rating,
-          gamesPlayed: client.gamesPlayed,
+          rating: authoritativeStats.rating,
+          gamesPlayed: authoritativeStats.gamesPlayed,
           ws 
         };
         role = 'black';
@@ -344,8 +541,8 @@ class MultiplayerServerManager {
         name: client.playerName, 
         connected: true, 
         color: 'w', 
-        rating: client.rating,
-        gamesPlayed: client.gamesPlayed,
+        rating: authoritativeStats.rating,
+        gamesPlayed: authoritativeStats.gamesPlayed,
         ws 
       };
       role = 'white';
@@ -355,41 +552,41 @@ class MultiplayerServerManager {
         name: client.playerName, 
         connected: true, 
         color: 'b', 
-        rating: client.rating,
-        gamesPlayed: client.gamesPlayed,
+        rating: authoritativeStats.rating,
+        gamesPlayed: authoritativeStats.gamesPlayed,
         ws 
       };
       role = 'black';
     } else {
-      // Both seats filled: join as spectator
+      // Both player seats filled: join as spectator
       role = 'spectator';
       room.spectators.push({ id: client.playerId, name: client.playerName, ws });
     }
 
-    // Check if game should start now (both White and Black present)
+    // Start game if both players are seated and game not yet active
     if (room.white && room.black && !room.isGameActive && !room.gameOver) {
       room.isGameActive = true;
       room.lastMoveTimestamp = Date.now();
     }
 
-    // Send complete authoritative room snapshot to this client
+    const now = Date.now();
     const state = this.serializeRoomState(room);
     this.send(ws, {
       type: 'room_state',
       state,
       yourRole: role,
       yourId: client.playerId,
+      serverTime: now,
     });
 
-    // Notify other players
     if (role === 'white' || role === 'black') {
       this.broadcastToRoom(room, {
         type: 'opponent_joined',
         player: { 
           name: client.playerName, 
           color: role === 'white' ? 'w' : 'b',
-          rating: client.rating,
-          gamesPlayed: client.gamesPlayed,
+          rating: authoritativeStats.rating,
+          gamesPlayed: authoritativeStats.gamesPlayed,
         },
       }, ws);
     }
@@ -418,7 +615,6 @@ class MultiplayerServerManager {
     const now = Date.now();
     const elapsed = now - room.lastMoveTimestamp;
 
-    // Deduct elapsed time from moving player
     if (room.timeControl.initialSeconds > 0) {
       if (currentTurn === 'w') {
         room.whiteTimeMs = Math.max(0, room.whiteTimeMs - elapsed + room.timeControl.incrementSeconds * 1000);
@@ -427,7 +623,6 @@ class MultiplayerServerManager {
       }
     }
 
-    // Attempt authoritative move execution in chess.js
     try {
       const moveRes = room.chess.move({
         from: payload.from,
@@ -440,9 +635,8 @@ class MultiplayerServerManager {
       }
 
       room.lastMoveTimestamp = now;
-      room.drawOfferedBy = null; // Move cancels any pending draw offer
+      room.drawOfferedBy = null;
 
-      // Check game over
       let gameOverDetails: MultiplayerGameOver | null = null;
       let isGameOver = false;
 
@@ -467,7 +661,6 @@ class MultiplayerServerManager {
         gameOverDetails = this.finalizeGameOver(room, 'draw', 'Draw by 50-move rule');
       }
 
-      // Broadcast move to all room participants
       this.broadcastToRoom(room, {
         type: 'move_made',
         from: moveRes.from,
@@ -480,6 +673,8 @@ class MultiplayerServerManager {
         isCheck: room.chess.inCheck(),
         isGameOver,
         gameOver: gameOverDetails,
+        lastMoveTimestamp: now,
+        serverTime: now,
       });
     } catch {
       this.send(ws, { type: 'error', message: 'Invalid move coordinates' });
@@ -499,6 +694,7 @@ class MultiplayerServerManager {
     const reason = `${resigningColor === 'w' ? 'White' : 'Black'} resigned`;
     const gameOverDetails = this.finalizeGameOver(room, winner, reason);
 
+    const now = Date.now();
     this.broadcastToRoom(room, {
       type: 'move_made',
       from: '',
@@ -511,6 +707,8 @@ class MultiplayerServerManager {
       isCheck: false,
       isGameOver: true,
       gameOver: gameOverDetails,
+      lastMoveTimestamp: now,
+      serverTime: now,
     });
   }
 
@@ -534,11 +732,16 @@ class MultiplayerServerManager {
     const room = this.rooms.get(payload.roomId);
     if (!room || !room.isGameActive || room.gameOver || !room.drawOfferedBy) return;
 
-    const acceptingColor = room.white && room.white.id === client.playerId ? 'w' : 'b';
-    if (acceptingColor === room.drawOfferedBy) return; // Can't accept own draw offer
+    const isWhite = room.white && room.white.id === client.playerId;
+    const isBlack = room.black && room.black.id === client.playerId;
+    if (!isWhite && !isBlack) return;
+
+    const acceptingColor = isWhite ? 'w' : 'b';
+    if (acceptingColor === room.drawOfferedBy) return; // Cannot accept own draw offer
 
     const gameOverDetails = this.finalizeGameOver(room, 'draw', 'Draw agreed by mutual consensus');
 
+    const now = Date.now();
     this.broadcastToRoom(room, {
       type: 'move_made',
       from: '',
@@ -551,6 +754,8 @@ class MultiplayerServerManager {
       isCheck: false,
       isGameOver: true,
       gameOver: gameOverDetails,
+      lastMoveTimestamp: now,
+      serverTime: now,
     });
   }
 
@@ -563,22 +768,47 @@ class MultiplayerServerManager {
 
   private processRematchOffer(ws: WebSocket, client: ConnectedClient, payload: { roomId: string }) {
     const room = this.rooms.get(payload.roomId);
-    if (!room || !room.gameOver) return;
+    if (!room || !room.gameOver) {
+      return this.send(ws, { type: 'error', message: 'No finished game to rematch' });
+    }
 
     const isWhite = room.white && room.white.id === client.playerId;
     const isBlack = room.black && room.black.id === client.playerId;
-    if (!isWhite && !isBlack) return;
+    if (!isWhite && !isBlack) {
+      return this.send(ws, { type: 'error', message: 'Only match players can offer a rematch' });
+    }
 
     const color = isWhite ? 'w' : 'b';
     room.rematchOfferedBy = color;
     this.broadcastToRoom(room, { type: 'rematch_offered', by: color }, ws);
   }
 
+  /**
+   * Authoritative rematch acceptance validation: ONLY the other player can accept
+   */
   private processRematchAccept(ws: WebSocket, client: ConnectedClient, payload: { roomId: string }) {
     const room = this.rooms.get(payload.roomId);
-    if (!room || !room.gameOver || !room.rematchOfferedBy) return;
+    if (!room || !room.gameOver) {
+      return this.send(ws, { type: 'error', message: 'No finished match to rematch' });
+    }
+    if (!room.rematchOfferedBy) {
+      return this.send(ws, { type: 'error', message: 'No active rematch offer to accept' });
+    }
 
-    // Reset chess board
+    // Strictly validate that only the opponent (the other player) can accept
+    const isWhite = room.white && room.white.id === client.playerId;
+    const isBlack = room.black && room.black.id === client.playerId;
+
+    if (!isWhite && !isBlack) {
+      return this.send(ws, { type: 'error', message: 'Spectators cannot accept a rematch' });
+    }
+
+    const acceptingColor: 'w' | 'b' = isWhite ? 'w' : 'b';
+    if (acceptingColor === room.rematchOfferedBy) {
+      return this.send(ws, { type: 'error', message: 'You cannot accept your own rematch offer' });
+    }
+
+    // Reset chess board with authoritative state
     room.chess = new Chess();
     room.gameOver = null;
     room.drawOfferedBy = null;
@@ -590,7 +820,7 @@ class MultiplayerServerManager {
     room.whiteTimeMs = initialMs;
     room.blackTimeMs = initialMs;
 
-    // Swap player colors for fair alternating play!
+    // Swap player colors for fair alternating play
     const oldWhite = room.white;
     const oldBlack = room.black;
 
@@ -618,7 +848,7 @@ class MultiplayerServerManager {
     else if (room.black && room.black.id === client.playerId) senderColor = 'b';
 
     const message: MultiplayerChatMessage = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: `msg_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
       sender: client.playerName,
       senderColor,
       text: cleanText,
@@ -668,7 +898,7 @@ class MultiplayerServerManager {
         try {
           ws.send(payload);
         } catch (e) {
-          console.warn('[Multiplayer WS] Broadcast error to socket:', e);
+          console.warn('[Multiplayer WS] Broadcast error:', e);
         }
       }
     });
@@ -722,6 +952,10 @@ class MultiplayerServerManager {
       drawOfferedBy: room.drawOfferedBy,
       rematchOfferedBy: room.rematchOfferedBy,
       chat: room.chat,
+      lastMoveTimestamp: room.lastMoveTimestamp,
+      serverTime: Date.now(),
+      isPrivate: room.isPrivate,
+      allowedPlayerIds: room.allowedPlayerIds,
     };
   }
 }

@@ -106,33 +106,119 @@
         "puzzleRating": { "type": "number" },
         "updatedAt": { "type": "string" }
       },
-      "required": ["userId", "displayName", "multiplayerRating", "multiplayerGamesPlayed"]
+      "required": ["userId", "displayName", "multiplayerRating"]
+    },
+    "Friendship": {
+      "title": "Friendship",
+      "description": "Established friend relationship between two users",
+      "type": "object",
+      "properties": {
+        "friendId": { "type": "string", "maxLength": 128 },
+        "friendDisplayName": { "type": "string", "maxLength": 64 },
+        "friendPhotoURL": { "type": "string", "maxLength": 512 },
+        "friendRating": { "type": "number" },
+        "addedAt": { "type": "string" }
+      },
+      "required": ["friendId", "friendDisplayName"]
+    },
+    "FriendRequest": {
+      "title": "FriendRequest",
+      "description": "Pending, accepted, or declined friend request",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "fromUserId": { "type": "string", "maxLength": 128 },
+        "fromDisplayName": { "type": "string", "maxLength": 64 },
+        "fromPhotoURL": { "type": "string", "maxLength": 512 },
+        "fromRating": { "type": "number" },
+        "toUserId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "fromUserId", "toUserId", "status"]
+    },
+    "DirectMessage": {
+      "title": "DirectMessage",
+      "description": "1-on-1 direct chat message between friends",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "chatId": { "type": "string", "maxLength": 256 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderDisplayName": { "type": "string", "maxLength": 64 },
+        "senderPhotoURL": { "type": "string", "maxLength": 512 },
+        "recipientId": { "type": "string", "maxLength": 128 },
+        "text": { "type": "string", "maxLength": 2048 },
+        "createdAt": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["id", "chatId", "senderId", "recipientId", "text", "createdAt"]
+    },
+    "GameChallenge": {
+      "title": "GameChallenge",
+      "description": "Direct match challenge between two friends",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "challengerId": { "type": "string", "maxLength": 128 },
+        "challengerDisplayName": { "type": "string", "maxLength": 64 },
+        "challengerPhotoURL": { "type": "string", "maxLength": 512 },
+        "challengerRating": { "type": "number" },
+        "challengedId": { "type": "string", "maxLength": 128 },
+        "timeControl": { "type": "string", "maxLength": 32 },
+        "challengerColor": { "type": "string", "enum": ["w", "b", "random"] },
+        "isRated": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined", "cancelled", "expired"] },
+        "roomId": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string" },
+        "expiresAt": { "type": "string" }
+      },
+      "required": ["id", "challengerId", "challengedId", "timeControl", "status"]
+    },
+    "UserPresence": {
+      "title": "UserPresence",
+      "description": "Live online presence and in-game activity indicator",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["online", "in-game", "offline"] },
+        "currentRoomId": { "type": "string", "maxLength": 64 },
+        "lastActive": { "type": "string" }
+      },
+      "required": ["userId", "status", "lastActive"]
     }
   },
   "firestore": {
-    "/users/{userId}/public/profile": {
-      "schema": "UserProfile",
-      "description": "Public profile info for a user"
+    "users": {
+      "description": "Root user directory containing profiles, private accounts, and stats",
+      "subcollections": {
+        "profile": { "description": "Public profile of user" },
+        "private": { "description": "Private sensitive info of user" },
+        "stats": { "description": "Current stats and rating history" },
+        "preferences": { "description": "User preferences" },
+        "matches": { "description": "Multiplayer match history records" },
+        "friends": { "description": "Friend list of user" }
+      }
     },
-    "/users/{userId}/private/account": {
-      "schema": "UserPrivateAccount",
-      "description": "Private user account info such as email"
+    "public_leaderboard": {
+      "description": "Public read-only real-time multiplayer leaderboard entries"
     },
-    "/users/{userId}/stats/current": {
-      "schema": "UserStats",
-      "description": "Current chess stats and ratings for a user"
+    "friend_requests": {
+      "description": "Pending and resolved friend requests between users"
     },
-    "/users/{userId}/preferences/current": {
-      "schema": "UserPreferences",
-      "description": "User chess configuration preferences"
+    "direct_chats": {
+      "description": "Direct chat rooms between pairs of users",
+      "subcollections": {
+        "messages": { "description": "Direct messages in the chat" }
+      }
     },
-    "/users/{userId}/matches/{matchId}": {
-      "schema": "MultiplayerMatch",
-      "description": "Personal multiplayer match history logs"
+    "game_challenges": {
+      "description": "Direct game challenges between friends"
     },
-    "/public_leaderboard/{userId}": {
-      "schema": "PublicLeaderboardEntry",
-      "description": "Public live leaderboard entries"
+    "user_presence": {
+      "description": "Real-time user presence and online status"
     }
   }
 }

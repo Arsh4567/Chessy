@@ -8,10 +8,11 @@ import {
   limit,
   getDocs,
   onSnapshot,
+  runTransaction,
 } from 'firebase/firestore';
 import { db, auth } from './config';
 import { OperationType, handleFirestoreError } from './errors';
-import { UserStats, UserPreferences, MultiplayerMatchRecord, SavedGame } from '../utils/storage';
+import { UserStats, UserPreferences, MultiplayerMatchRecord } from '../utils/storage';
 import { INITIAL_RATING } from '../utils/eloRating';
 
 export interface LeaderboardEntry {
@@ -51,28 +52,6 @@ export async function saveUserStatsToFirestore(userId: string, stats: UserStats)
       updatedAt: new Date().toISOString(),
     };
     await setDoc(doc(db, 'users', userId, 'stats', 'current'), payload, { merge: true });
-
-    // Also update public leaderboard entry if auth is signed in and matches
-    if (auth.currentUser && auth.currentUser.uid === userId) {
-      try {
-        const lbPayload: LeaderboardEntry = {
-          userId,
-          displayName: auth.currentUser.displayName || 'Grandmaster Player',
-          photoURL: auth.currentUser.photoURL || '',
-          multiplayerRating: payload.multiplayerRating,
-          multiplayerGamesPlayed: payload.multiplayerGamesPlayed,
-          multiplayerWins: payload.multiplayerWins,
-          multiplayerLosses: payload.multiplayerLosses,
-          multiplayerDraws: payload.multiplayerDraws,
-          puzzleRating: payload.puzzleRating,
-          updatedAt: payload.updatedAt,
-        };
-        await setDoc(doc(db, 'public_leaderboard', userId), lbPayload, { merge: true });
-      } catch (err) {
-        // Non-blocking leaderboard update
-        console.warn('Could not sync to public_leaderboard:', err);
-      }
-    }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -95,7 +74,7 @@ export async function loadUserStatsFromFirestore(userId: string): Promise<UserSt
         draws: data.draws ?? 0,
         puzzleRating: data.puzzleRating ?? 1500,
         puzzlesSolved: data.puzzlesSolved ?? 0,
-        history: [], // History logs loaded separately or kept in subcollection
+        history: [],
         multiplayerRating: data.multiplayerRating ?? INITIAL_RATING,
         multiplayerGamesPlayed: data.multiplayerGamesPlayed ?? 0,
         multiplayerWins: data.multiplayerWins ?? 0,
@@ -169,50 +148,99 @@ export async function loadUserPreferencesFromFirestore(
 }
 
 /**
- * Records a multiplayer match to Firestore under users/{userId}/matches/{matchId}
+ * Atomically updates user stats and records a multiplayer match in Firestore via runTransaction
  */
-export async function recordMatchToFirestore(
+export async function recordMultiplayerGameTransaction(
   userId: string,
-  match: MultiplayerMatchRecord
+  match: MultiplayerMatchRecord,
+  resultDetails: {
+    result: 'win' | 'loss' | 'draw';
+    ratingBefore: number;
+    ratingAfter: number;
+    ratingDelta: number;
+    isProvisional: boolean;
+  }
 ): Promise<void> {
   if (!userId || !auth.currentUser || auth.currentUser.uid !== userId) return;
   const cleanId = match.id.replace(/[^a-zA-Z0-9_\-]/g, '_');
-  const path = `users/${userId}/matches/${cleanId}`;
+  const userStatsRef = doc(db, 'users', userId, 'stats', 'current');
+  const matchDocRef = doc(db, 'users', userId, 'matches', cleanId);
+
   try {
-    const payload = {
-      id: cleanId,
-      roomId: match.roomId || 'MAIN',
-      userId,
-      opponentName: match.opponentName || 'Opponent',
-      opponentRating: Number(match.opponentRating || INITIAL_RATING),
-      ratingBefore: Number(match.ratingBefore || INITIAL_RATING),
-      ratingAfter: Number(match.ratingAfter || INITIAL_RATING),
-      ratingDelta: Number(match.ratingDelta || 0),
-      isProvisional: Boolean(match.isProvisional),
-      matchNumber: Number(match.matchNumber || 1),
-      result: match.result,
-      movesCount: Number(match.movesCount || 0),
-      pgn: (match.pgn || '').substring(0, 8000),
-      date: match.date || new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-    };
-    await setDoc(doc(db, 'users', userId, 'matches', cleanId), payload);
+    await runTransaction(db, async (transaction) => {
+      const statsSnap = await transaction.get(userStatsRef);
+      const prevData = statsSnap.exists() ? statsSnap.data() : {};
+
+      const prevRating = Number(prevData.multiplayerRating ?? INITIAL_RATING);
+      const prevGames = Number(prevData.multiplayerGamesPlayed ?? 0);
+      const prevWins = Number(prevData.multiplayerWins ?? 0);
+      const prevLosses = Number(prevData.multiplayerLosses ?? 0);
+      const prevDraws = Number(prevData.multiplayerDraws ?? 0);
+      const prevPeak = Number(prevData.multiplayerPeakRating ?? prevRating);
+
+      const newGames = prevGames + 1;
+      const newRating = Number(resultDetails.ratingAfter);
+      const newPeak = Math.max(prevPeak, newRating);
+      const newWins = prevWins + (resultDetails.result === 'win' ? 1 : 0);
+      const newLosses = prevLosses + (resultDetails.result === 'loss' ? 1 : 0);
+      const newDraws = prevDraws + (resultDetails.result === 'draw' ? 1 : 0);
+
+      const updatedStats = {
+        userId,
+        gamesPlayed: Number(prevData.gamesPlayed ?? 0),
+        wins: Number(prevData.wins ?? 0),
+        losses: Number(prevData.losses ?? 0),
+        draws: Number(prevData.draws ?? 0),
+        puzzleRating: Number(prevData.puzzleRating ?? 1500),
+        puzzlesSolved: Number(prevData.puzzlesSolved ?? 0),
+        multiplayerRating: newRating,
+        multiplayerGamesPlayed: newGames,
+        multiplayerWins: newWins,
+        multiplayerLosses: newLosses,
+        multiplayerDraws: newDraws,
+        multiplayerPeakRating: newPeak,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const matchPayload = {
+        id: cleanId,
+        roomId: match.roomId || 'MAIN',
+        userId,
+        opponentName: match.opponentName || 'Opponent',
+        opponentRating: Number(match.opponentRating || INITIAL_RATING),
+        ratingBefore: Number(resultDetails.ratingBefore || prevRating),
+        ratingAfter: newRating,
+        ratingDelta: Number(resultDetails.ratingDelta || 0),
+        isProvisional: Boolean(resultDetails.isProvisional),
+        matchNumber: newGames,
+        result: resultDetails.result,
+        movesCount: Number(match.movesCount || 0),
+        pgn: (match.pgn || '').substring(0, 8000),
+        date: match.date || new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      };
+
+      transaction.set(userStatsRef, updatedStats, { merge: true });
+      transaction.set(matchDocRef, matchPayload);
+    });
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
+    handleFirestoreError(error, OperationType.WRITE, `users/${userId}/stats/current`);
   }
 }
 
 /**
- * Loads recent match history from Firestore
+ * Loads recent match history from Firestore ordered newest first before applying limit
  */
 export async function loadMatchHistoryFromFirestore(
-  userId: string
+  userId: string,
+  limitCount = 50
 ): Promise<MultiplayerMatchRecord[]> {
   if (!userId) return [];
   const path = `users/${userId}/matches`;
   try {
     const matchesCol = collection(db, 'users', userId, 'matches');
-    const q = query(matchesCol, limit(50));
+    // Order by createdAt descending BEFORE applying limit
+    const q = query(matchesCol, orderBy('createdAt', 'desc'), limit(limitCount));
     const snapshot = await getDocs(q);
     const records: MultiplayerMatchRecord[] = [];
     snapshot.forEach((d) => {
@@ -235,7 +263,36 @@ export async function loadMatchHistoryFromFirestore(
     });
     return records;
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, path);
+    // Fallback if composite index is pending: query limit then sort newest first
+    try {
+      const matchesCol = collection(db, 'users', userId, 'matches');
+      const q = query(matchesCol, limit(limitCount));
+      const snapshot = await getDocs(q);
+      const records: MultiplayerMatchRecord[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data();
+        records.push({
+          id: data.id,
+          roomId: data.roomId,
+          date: data.date,
+          result: data.result,
+          opponentName: data.opponentName,
+          opponentRating: data.opponentRating,
+          ratingBefore: data.ratingBefore,
+          ratingAfter: data.ratingAfter,
+          ratingDelta: data.ratingDelta,
+          isProvisional: data.isProvisional,
+          matchNumber: data.matchNumber,
+          movesCount: data.movesCount,
+          pgn: data.pgn,
+        });
+      });
+      records.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+      return records;
+    } catch (fallbackErr) {
+      handleFirestoreError(fallbackErr, OperationType.LIST, path);
+      return [];
+    }
   }
 }
 
@@ -251,7 +308,6 @@ export async function syncUserProfileToFirestore(user: {
   const publicPath = `users/${user.uid}/public/profile`;
   const privatePath = `users/${user.uid}/private/account`;
   try {
-    // 1. Public profile
     await setDoc(
       doc(db, 'users', user.uid, 'public', 'profile'),
       {
@@ -264,7 +320,6 @@ export async function syncUserProfileToFirestore(user: {
       { merge: true }
     );
 
-    // 2. Private account with isolated PII email
     if (user.email) {
       await setDoc(
         doc(db, 'users', user.uid, 'private', 'account'),
@@ -298,7 +353,6 @@ export function subscribeToPublicLeaderboard(
         const item = d.data() as LeaderboardEntry;
         list.push(item);
       });
-      // Sort in memory by multiplayerRating descending
       list.sort((a, b) => (b.multiplayerRating ?? 0) - (a.multiplayerRating ?? 0));
       callback(list);
     },
