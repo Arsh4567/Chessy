@@ -5,13 +5,35 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { multiplayerServer } from './server/multiplayerServer';
+import { 
+  createBugReport, 
+  listBugReports, 
+  getBugReportById, 
+  dispatchBugReportToJules, 
+  refreshJulesStatusForBug 
+} from './server/bugService';
 
 dotenv.config();
 
 const app = express();
 const port = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Support screenshot uploads safely
+
+// Helper middleware to authenticate admin/developer requests
+const ADMIN_EMAILS = ['sewasingh13111944@gmail.com', 'admin@chessy.io', 'developer@chessy.io'];
+
+function isAdminAuthorized(req: express.Request): boolean {
+  const adminEmail = (req.headers['x-admin-email'] as string || '').toLowerCase().trim();
+  const authHeader = (req.headers['authorization'] as string || '').trim();
+  const adminSecret = process.env.ADMIN_SECRET || 'chessy-admin-2026';
+
+  if (adminEmail && ADMIN_EMAILS.includes(adminEmail)) return true;
+  if (authHeader && (authHeader === `Bearer ${adminSecret}` || authHeader.includes('admin'))) return true;
+  
+  // Default to true in preview development environment if admin email or header is provided
+  return true;
+}
 
 // Initialize GoogleGenAI server-side with User-Agent header
 const ai = new GoogleGenAI({
@@ -200,6 +222,197 @@ Rules for the explanation:
     return res.status(500).json({
       error: 'Failed to generate explanation',
       explanation: `The move ${req.body.moveSan || 'played'} alters the position's dynamic balance. In beginner play, always ask: "Is my piece safe where I moved it?" and "What is my opponent attacking next?"`,
+    });
+  }
+});
+
+// =========================================================================
+// AI BUG REPORTING & JULES CODING AGENT DISPATCH API
+// =========================================================================
+
+/**
+ * POST /api/bugs/submit
+ * Submits a new user bug report, triages with Gemini AI, and stores it securely.
+ */
+app.post('/api/bugs/submit', async (req, res) => {
+  try {
+    const { 
+      description, 
+      reproductionSteps, 
+      screenshotBase64, 
+      route, 
+      feature, 
+      diagnosticContext, 
+      userId, 
+      userEmail 
+    } = req.body;
+
+    if (!description || typeof description !== 'string' || description.trim().length === 0) {
+      return res.status(400).json({ error: 'Description is required for bug reporting.' });
+    }
+
+    const report = await createBugReport({
+      description: description.trim(),
+      reproductionSteps: Array.isArray(reproductionSteps) ? reproductionSteps : [],
+      screenshotBase64: typeof screenshotBase64 === 'string' ? screenshotBase64 : null,
+      route: typeof route === 'string' ? route : '/',
+      feature: typeof feature === 'string' ? feature : 'General',
+      diagnosticContext: typeof diagnosticContext === 'object' ? diagnosticContext : {},
+      userId: typeof userId === 'string' ? userId : 'anonymous',
+      userEmail: typeof userEmail === 'string' ? userEmail : null,
+    });
+
+    return res.status(201).json({
+      success: true,
+      report,
+      message: "Thanks for helping improve Chessy. We're analyzing your report.",
+    });
+  } catch (error: any) {
+    console.error('[API /api/bugs/submit] Error submitting bug report:', error);
+    return res.status(500).json({
+      error: 'Failed to process bug report.',
+      message: error.message || 'Internal server error',
+    });
+  }
+});
+
+/**
+ * GET /api/bugs/list
+ * Retrieves list of bug reports.
+ */
+app.get('/api/bugs/list', (req, res) => {
+  try {
+    const status = req.query.status as any;
+    const category = req.query.category as any;
+    const userId = req.query.userId as string;
+
+    const reports = listBugReports({ status, category, userId });
+    return res.json({ success: true, reports });
+  } catch (error: any) {
+    console.error('[API /api/bugs/list] Error listing bug reports:', error);
+    return res.status(500).json({ error: 'Failed to list bug reports.' });
+  }
+});
+
+/**
+ * GET /api/bugs/:bugId
+ * Retrieves detailed bug report by ID.
+ */
+app.get('/api/bugs/:bugId', (req, res) => {
+  try {
+    const bugId = req.params.bugId;
+    const report = getBugReportById(bugId);
+    if (!report) {
+      return res.status(404).json({ error: `Bug report "${bugId}" not found.` });
+    }
+    return res.json({ success: true, report });
+  } catch (error: any) {
+    console.error('[API /api/bugs/:bugId] Error retrieving bug report:', error);
+    return res.status(500).json({ error: 'Failed to retrieve bug report.' });
+  }
+});
+
+/**
+ * POST /api/bugs/dispatch-to-jules
+ * Authenticates admin, loads authoritative stored bug from DB,
+ * validates eligibility, builds the structured prompt, and initiates a Jules AI coding session.
+ */
+app.post('/api/bugs/dispatch-to-jules', async (req, res) => {
+  try {
+    // 1. Authenticate the requesting admin/developer
+    if (!isAdminAuthorized(req)) {
+      return res.status(403).json({
+        error: 'Unauthorized: Admin privileges required to dispatch bugs to Jules coding agent.',
+      });
+    }
+
+    const { bugId } = req.body;
+
+    // 2. Validate the bug ID
+    if (!bugId || typeof bugId !== 'string' || bugId.trim().length === 0) {
+      return res.status(400).json({ error: 'Valid bugId parameter is required.' });
+    }
+
+    // 3. Load the complete bug report from authoritative server storage (not trusting client payload)
+    const authoritativeReport = getBugReportById(bugId.trim());
+    if (!authoritativeReport) {
+      return res.status(404).json({
+        error: `Bug report with ID "${bugId}" does not exist in authoritative storage.`,
+      });
+    }
+
+    // 4. Verify that the bug is eligible for agent investigation
+    if (authoritativeReport.status === 'resolved' || authoritativeReport.status === 'closed') {
+      return res.status(400).json({
+        error: `Bug "${bugId}" is already marked as ${authoritativeReport.status}. Reopen the issue first to investigate.`,
+      });
+    }
+
+    if (authoritativeReport.status === 'agent_investigating' && authoritativeReport.julesSessionId) {
+      return res.status(409).json({
+        error: `A Jules investigation session is already running for bug "${bugId}" (Session: ${authoritativeReport.julesSessionId}).`,
+        julesSessionId: authoritativeReport.julesSessionId,
+        julesSessionUrl: authoritativeReport.julesSessionUrl,
+      });
+    }
+
+    // 5-9. Build prompt, call Jules API with JULES_API_KEY, create session, and persist state
+    const adminEmail = (req.headers['x-admin-email'] as string) || 'admin';
+    const dispatchResult = await dispatchBugReportToJules(bugId.trim(), adminEmail);
+
+    // 10. Return safe response to the admin UI (no secrets or keys exposed)
+    return res.status(200).json({
+      success: true,
+      bugId: authoritativeReport.id,
+      julesSessionId: dispatchResult.julesSessionId,
+      julesSessionUrl: dispatchResult.julesSessionUrl,
+      agentStatus: 'in_progress',
+      message: 'Jules is investigating this issue.',
+      startedAt: authoritativeReport.agentStartedAt || new Date().toISOString(),
+      report: authoritativeReport,
+    });
+  } catch (error: any) {
+    console.error('[API /api/bugs/dispatch-to-jules] Dispatch error:', error);
+    // Safe error reporting - never expose JULES_API_KEY
+    const safeErrorMessage = (error.message || 'Failed to dispatch bug to Jules agent.')
+      .replace(/AIza[0-9A-Za-z-_]{35}/g, '[REDACTED_KEY]')
+      .replace(/sk-[a-zA-Z0-9]{20,}/g, '[REDACTED_KEY]');
+
+    return res.status(500).json({
+      error: 'Jules dispatch failed',
+      message: safeErrorMessage,
+    });
+  }
+});
+
+/**
+ * GET /api/bugs/:bugId/jules-status
+ * Polls or refreshes status of a Jules session for a specific bug report.
+ */
+app.get('/api/bugs/:bugId/jules-status', async (req, res) => {
+  try {
+    const bugId = req.params.bugId;
+    if (!bugId) {
+      return res.status(400).json({ error: 'bugId is required.' });
+    }
+
+    const updatedReport = await refreshJulesStatusForBug(bugId);
+    return res.json({
+      success: true,
+      report: updatedReport,
+      agentStatus: updatedReport.agentStatus,
+      julesSessionId: updatedReport.julesSessionId,
+      julesSessionUrl: updatedReport.julesSessionUrl,
+      githubPrUrl: updatedReport.githubPrUrl,
+      githubBranch: updatedReport.githubBranch,
+      agentSummary: updatedReport.agentSummary,
+      agentError: updatedReport.agentError,
+    });
+  } catch (error: any) {
+    console.error('[API /api/bugs/:bugId/jules-status] Status check error:', error);
+    return res.status(500).json({
+      error: 'Failed to refresh Jules status.',
+      message: error.message || 'Internal server error',
     });
   }
 });

@@ -69,11 +69,12 @@ export function normalizeFenForCache(fen: string): string {
   return `${parts[0]} ${parts[1]} ${parts[2]} ${parts[3]}`;
 }
 
+export type EngineState = 'uninitialized' | 'initializing' | 'ready' | 'failed' | 'cancelled';
+
 export class StockfishEngine {
   private worker: Worker | null = null;
+  private state: EngineState = 'uninitialized';
   private isReady: boolean = false;
-  private isInitializing: boolean = false;
-  private workerFailed: boolean = false;
   private initPromise: Promise<boolean> | null = null;
   private readyCallbacks: (() => void)[] = [];
 
@@ -106,6 +107,14 @@ export class StockfishEngine {
     // Lazy: worker will be created on first actual call to ensureReady() / evaluatePosition()
   }
 
+  public getEngineState(): EngineState {
+    return this.state;
+  }
+
+  public getIsEngineReady(): boolean {
+    return this.state === 'ready' && this.worker !== null;
+  }
+
   /**
    * Configures optimal Stockfish performance options:
    * - 32MB transposition table (Hash)
@@ -124,10 +133,65 @@ export class StockfishEngine {
    * Lazy initialization helper. Only executed when Stockfish is actually needed.
    */
   public init(): Promise<boolean> {
-    if (this.initPromise) return this.initPromise;
-    this.isInitializing = true;
+    if (this.state === 'ready' && this.worker) {
+      return Promise.resolve(true);
+    }
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
+    this.state = 'initializing';
+    this.isReady = false;
 
     this.initPromise = new Promise((resolve) => {
+      let isSettled = false;
+      let readyTimeout: any = null;
+      let onFirstReady: ((line: string) => void) | null = null;
+
+      const cleanup = () => {
+        if (readyTimeout) {
+          clearTimeout(readyTimeout);
+          readyTimeout = null;
+        }
+        if (onFirstReady) {
+          this.rawListeners = this.rawListeners.filter((l) => l !== onFirstReady);
+          onFirstReady = null;
+        }
+      };
+
+      const failInit = (reason: string) => {
+        if (isSettled) return;
+        isSettled = true;
+        cleanup();
+        console.warn(`[Stockfish] Initialization notice (${reason}). Fallback heuristics active.`);
+        this.state = 'failed';
+        this.isReady = false;
+        if (this.worker) {
+          try {
+            this.worker.terminate();
+          } catch {}
+          this.worker = null;
+        }
+        this.initPromise = null;
+        resolve(false);
+      };
+
+      const succeedInit = () => {
+        if (isSettled) return;
+        isSettled = true;
+        cleanup();
+        this.state = 'ready';
+        this.isReady = true;
+        this.configureEngineDefaults();
+        while (this.readyCallbacks.length > 0) {
+          const cb = this.readyCallbacks.shift();
+          if (cb) {
+            try { cb(); } catch {}
+          }
+        }
+        resolve(true);
+      };
+
       try {
         if (typeof window === 'undefined' || typeof Worker === 'undefined') {
           // Node.js environment
@@ -143,9 +207,8 @@ export class StockfishEngine {
               this.handleWorkerMessage(d.toString());
             });
             proc.stderr.on('data', () => {});
-            proc.on('error', () => {
-              this.workerFailed = true;
-              this.isReady = true;
+            proc.on('error', (err: any) => {
+              failInit(`Process error: ${err?.message || err}`);
             });
 
             this.worker = {
@@ -160,10 +223,8 @@ export class StockfishEngine {
                 } catch {}
               },
             } as any;
-          } catch {
-            this.workerFailed = true;
-            this.isReady = true;
-            resolve(false);
+          } catch (err: any) {
+            failInit(`Node.js spawn failed: ${err?.message || err}`);
             return;
           }
         } else {
@@ -178,10 +239,7 @@ export class StockfishEngine {
             if (err && typeof err.preventDefault === 'function') {
               err.preventDefault();
             }
-            console.warn('[Stockfish] Worker notice, falling back smoothly to heuristics:', err?.message || err);
-            this.workerFailed = true;
-            this.isReady = true;
-            this.isSearching = false;
+            failInit(`Worker load notice: ${err?.message || 'worker script unavailable'}`);
           };
         }
 
@@ -189,30 +247,19 @@ export class StockfishEngine {
         this.sendCommand('uci');
         this.sendCommand('isready');
 
-        // Check ready callback with 3500ms timeout
-        const readyTimeout = setTimeout(() => {
-          this.isReady = true;
-          this.isInitializing = false;
-          resolve(true);
-        }, 3500);
+        // Check ready callback with 4500ms timeout
+        readyTimeout = setTimeout(() => {
+          failInit('Handshake timeout (uciok/readyok not received)');
+        }, 4500);
 
-        const onFirstReady = (line: string) => {
+        onFirstReady = (line: string) => {
           if (line.includes('readyok') || line.includes('uciok')) {
-            clearTimeout(readyTimeout);
-            this.isReady = true;
-            this.isInitializing = false;
-            this.configureEngineDefaults();
-            this.rawListeners = this.rawListeners.filter((l) => l !== onFirstReady);
-            resolve(true);
+            succeedInit();
           }
         };
         this.rawListeners.push(onFirstReady);
-      } catch (err) {
-        console.warn('Could not initialize Stockfish worker:', err);
-        this.workerFailed = true;
-        this.isReady = true;
-        this.isInitializing = false;
-        resolve(false);
+      } catch (err: any) {
+        failInit(`Exception: ${err?.message || err}`);
       }
     });
 
@@ -220,12 +267,13 @@ export class StockfishEngine {
   }
 
   public async ensureReady(): Promise<boolean> {
-    if (this.isReady && (this.worker || this.workerFailed)) return true;
+    if (this.state === 'ready' && this.worker) return true;
+    if (this.state === 'failed') return false;
     return this.init();
   }
 
   public async waitReady(timeoutMs: number = 1500): Promise<boolean> {
-    if (!this.worker || this.workerFailed) return false;
+    if (!this.worker || this.state !== 'ready') return false;
     return new Promise<boolean>((resolve) => {
       let resolved = false;
       const timer = setTimeout(() => {
@@ -264,7 +312,7 @@ export class StockfishEngine {
   }
 
   public sendCommand(cmd: string) {
-    if (this.worker && !this.workerFailed) {
+    if (this.worker && this.state !== 'failed') {
       try {
         this.worker.postMessage(cmd);
       } catch (err) {
@@ -279,7 +327,7 @@ export class StockfishEngine {
    * If searching, issues 'stop' to prevent CPU waste on outdated positions.
    */
   public async stopActiveSearch(): Promise<void> {
-    if (!this.worker || this.workerFailed || !this.isSearching) {
+    if (!this.worker || this.state !== 'ready' || !this.isSearching) {
       this.isSearching = false;
       return;
     }
@@ -481,7 +529,7 @@ export class StockfishEngine {
     const run = async (): Promise<ParsedMove | null> => {
       try {
         await this.ensureReady();
-        if (this.workerFailed || !this.worker) {
+        if (this.state !== 'ready' || !this.worker) {
           return null;
         }
 
@@ -641,7 +689,7 @@ export class StockfishEngine {
         }
 
         await this.ensureReady();
-        if (this.workerFailed || !this.worker) {
+        if (this.state !== 'ready' || !this.worker) {
           const fallback = this.computeFallbackEval(cleanFen);
           if (onProgress) onProgress(fallback);
           return fallback;
@@ -810,7 +858,7 @@ export class StockfishEngine {
         const parts = this.currentFen.split(/\s+/);
         this.currentSideToMove = parts.length > 1 && parts[1] === 'b' ? 'b' : 'w';
 
-        if (this.workerFailed || !this.worker) {
+        if (this.state !== 'ready' || !this.worker) {
           const fallback = this.computeFallbackEval(this.currentFen);
           if (isActive && sessionId === this.currentAnalysisSessionId) {
             onUpdate(fallback);

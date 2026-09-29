@@ -293,3 +293,13 @@ export function getPieceGeometry(type: PieceType): THREE.BufferGeometry {
   geometryCache.set(normType, geom);
   return geom;
 }
+
+/**
+ * Disposes all cached procedural piece geometries and clears the cache
+ */
+export function disposeGeometryCache(): void {
+  geometryCache.forEach((geom) => {
+    geom.dispose();
+  });
+  geometryCache.clear();
+}

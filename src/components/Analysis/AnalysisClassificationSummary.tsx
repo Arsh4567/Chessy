@@ -35,13 +35,13 @@ export const AnalysisClassificationSummary: React.FC<AnalysisClassificationSumma
         <div className="text-center p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">
           <div className="text-[10px] text-slate-400 uppercase font-semibold">White Accuracy</div>
           <div className="text-xl font-mono font-black text-slate-100 tabular-nums">
-            {analyzedData.whiteAccuracy}%
+            {analyzedData.whiteAccuracy != null ? `${analyzedData.whiteAccuracy}%` : '—'}
           </div>
         </div>
         <div className="text-center p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">
           <div className="text-[10px] text-slate-400 uppercase font-semibold">Black Accuracy</div>
           <div className="text-xl font-mono font-black text-slate-100 tabular-nums">
-            {analyzedData.blackAccuracy}%
+            {analyzedData.blackAccuracy != null ? `${analyzedData.blackAccuracy}%` : '—'}
           </div>
         </div>
         <div className="text-center p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">

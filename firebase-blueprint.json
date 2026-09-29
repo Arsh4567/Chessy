@@ -188,6 +188,34 @@
         "lastActive": { "type": "string" }
       },
       "required": ["userId", "status", "lastActive"]
+    },
+    "BugReport": {
+      "title": "BugReport",
+      "description": "User submitted bug reports and automated Jules AI coding agent session records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 256 },
+        "description": { "type": "string", "maxLength": 4096 },
+        "reproductionSteps": { "type": "array", "items": { "type": "string" } },
+        "route": { "type": "string", "maxLength": 128 },
+        "feature": { "type": "string", "maxLength": 128 },
+        "browser": { "type": "string", "maxLength": 256 },
+        "device": { "type": "string", "maxLength": 64 },
+        "status": { "type": "string", "enum": ["open", "triaged", "agent_investigating", "agent_pr_ready", "resolved", "closed", "wontfix"] },
+        "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+        "category": { "type": "string", "enum": ["bug", "UI issue", "performance issue", "backend/API issue", "authentication issue", "feature request", "security concern", "duplicate", "unclear"] },
+        "aiSummary": { "type": "string", "maxLength": 512 },
+        "aiDiagnosis": { "type": "string", "maxLength": 2048 },
+        "julesSessionId": { "type": "string", "maxLength": 256 },
+        "julesSessionUrl": { "type": "string", "maxLength": 512 },
+        "agentStatus": { "type": "string", "enum": ["idle", "pending", "in_progress", "completed", "failed", "pr_created"] },
+        "githubPrUrl": { "type": "string", "maxLength": 512 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "description", "route", "status", "severity", "category"]
     }
   },
   "firestore": {
@@ -201,6 +229,9 @@
         "matches": { "description": "Multiplayer match history records" },
         "friends": { "description": "Friend list of user" }
       }
+    },
+    "bug_reports": {
+      "description": "User bug reports and autonomous Jules AI coding session state"
     },
     "public_leaderboard": {
       "description": "Public read-only real-time multiplayer leaderboard entries"

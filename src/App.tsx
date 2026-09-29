@@ -36,7 +36,7 @@ import { initPushNotificationScheduler } from './utils/pushNotifications';
 import { fetchChessComRecentGames, ChessComGame, ChessComPlayer } from './utils/chessComApi';
 import { useChessGame } from './hooks/useChessGame';
 import { Home, Swords, Zap, BookOpen, Search, Users } from 'lucide-react';
-import { TimeControl, PieceColor } from './types/chess';
+import { TimeControl, PieceColor, PieceType } from './types/chess';
 
 // Lazy loaded views to minimize initial bundle size and main-thread execution
 const HomeView = React.lazy(() =>
@@ -69,6 +69,12 @@ const PuzzleTrainer = React.lazy(() =>
 const SettingsModal = React.lazy(() =>
   import('./components/Settings/SettingsModal').then((m) => ({ default: m.SettingsModal }))
 );
+const ReportBugModal = React.lazy(() =>
+  import('./components/Bugs/ReportBugModal').then((m) => ({ default: m.ReportBugModal }))
+);
+const AdminBugTriageModal = React.lazy(() =>
+  import('./components/Bugs/AdminBugTriageModal').then((m) => ({ default: m.AdminBugTriageModal }))
+);
 
 export default function App() {
   const { user, loading: authLoading } = useAuth();
@@ -80,6 +86,8 @@ export default function App() {
   const [isSyncingStats, setIsSyncingStats] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showFenModal, setShowFenModal] = useState<boolean>(false);
+  const [showReportBug, setShowReportBug] = useState<boolean>(false);
+  const [showAdminTriage, setShowAdminTriage] = useState<boolean>(false);
 
   // Initialize Web Push Notifications scheduler
   useEffect(() => {
@@ -303,6 +311,8 @@ export default function App() {
         currentTab={activeTab}
         onSelectTab={setActiveTab}
         onOpenSettings={() => setShowSettings(true)}
+        onOpenReportBug={() => setShowReportBug(true)}
+        onOpenAdminTriage={() => setShowAdminTriage(true)}
         puzzleRating={stats.puzzleRating}
         multiplayerRating={stats.multiplayerRating}
         multiplayerGamesPlayed={stats.multiplayerGamesPlayed}
@@ -311,7 +321,7 @@ export default function App() {
       {/* Main App View */}
       <main className="flex-1 flex flex-col pb-20 md:pb-6">
         {activeTab === 'play' ? (
-          <div className="max-w-6xl mx-auto px-4 py-4 w-full flex-1 flex flex-col justify-center">
+          <div className="max-w-6xl mx-auto px-4 py-4 w-full flex-1 flex flex-col justify-start">
             {!inActiveMatch ? (
               /* Stockfish Bot Arena & Tuning Lobby */
               <BotSelection
@@ -444,14 +454,16 @@ export default function App() {
                         san: h.san,
                         from: h.from,
                         to: h.to,
-                        piece: h.piece as any,
-                        color: h.color as any,
+                        piece: h.piece as PieceType,
+                        color: h.color as PieceColor,
                         fen: replay.fen(),
                         eval: 0,
                       };
                     })
                   );
-                } catch {}
+                } catch (err) {
+                  console.warn('[App] Could not load full game history for analysis:', err);
+                }
                 setActiveTab('analyze');
               }}
             />
@@ -495,14 +507,16 @@ export default function App() {
                         san: h.san,
                         from: h.from,
                         to: h.to,
-                        piece: h.piece as any,
-                        color: h.color as any,
+                        piece: h.piece as PieceType,
+                        color: h.color as PieceColor,
                         fen: replay.fen(),
                         eval: 0,
                       };
                     })
                   );
-                } catch {}
+                } catch (err) {
+                  console.warn('[App] Could not load profile game history for analysis:', err);
+                }
                 setActiveTab('analyze');
               }}
               onResetStats={async () => {
@@ -545,14 +559,16 @@ export default function App() {
                         san: h.san,
                         from: h.from,
                         to: h.to,
-                        piece: h.piece as any,
-                        color: h.color as any,
+                        piece: h.piece as PieceType,
+                        color: h.color as PieceColor,
                         fen: replay.fen(),
                         eval: 0,
                       };
                     })
                   );
-                } catch {}
+                } catch (err) {
+                  console.warn('[App] Could not load multiplayer game history for analysis:', err);
+                }
                 setActiveTab('analyze');
               }}
             />
@@ -614,6 +630,43 @@ export default function App() {
             onClose={() => setShowSettings(false)}
             preferences={preferences}
             onUpdatePreferences={handleUpdatePreferences}
+            onOpenReportBug={() => {
+              setShowSettings(false);
+              setShowReportBug(true);
+            }}
+          />
+        </React.Suspense>
+      )}
+
+      {/* User Bug Reporting Modal */}
+      {showReportBug && (
+        <React.Suspense fallback={null}>
+          <ReportBugModal
+            isOpen={showReportBug}
+            onClose={() => setShowReportBug(false)}
+            currentRoute={`/${activeTab}`}
+            activeFeature={
+              activeTab === 'play'
+                ? inActiveMatch ? 'Active Match Arena' : 'Bot Selection Lobby'
+                : activeTab === 'analyze' ? 'Tactical Game Analysis'
+                : activeTab === 'puzzles' ? 'Tactics Trainer'
+                : activeTab === 'learn' ? 'Opening Academy & Explorer'
+                : activeTab === 'friends' ? 'Multiplayer Lobby & Chat'
+                : activeTab === 'leaderboard' ? 'Global Leaderboard'
+                : activeTab === 'profile' ? 'User Dashboard & Stats'
+                : activeTab === 'games' ? 'Chess.com Match Archive'
+                : 'General'
+            }
+          />
+        </React.Suspense>
+      )}
+
+      {/* Admin Bug Triage & Jules Agent Dispatch Center */}
+      {showAdminTriage && (
+        <React.Suspense fallback={null}>
+          <AdminBugTriageModal
+            isOpen={showAdminTriage}
+            onClose={() => setShowAdminTriage(false)}
           />
         </React.Suspense>
       )}

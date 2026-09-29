@@ -269,7 +269,9 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
           if (event.state.gameOver) {
             handleGameOverRecord(event.state.gameOver, nextChess, event.state, event.yourRole);
           }
-        } catch {}
+        } catch (err) {
+          console.warn('[Multiplayer] Invalid room FEN received:', err);
+        }
         break;
       }
 
@@ -297,7 +299,9 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
           if (event.from && event.to) {
             setLastMove({ from: event.from, to: event.to });
           }
-        } catch {}
+        } catch (err) {
+          console.warn('[Multiplayer] Invalid move FEN received:', err);
+        }
 
         setRoomState((prev) => {
           if (!prev) return prev;
@@ -444,7 +448,9 @@ export function useMultiplayerGame(options: UseMultiplayerGameOptions = {}) {
           const nextChess = new Chess(event.state.fen);
           setChess(nextChess);
           chessRef.current = nextChess;
-        } catch {}
+        } catch (err) {
+          console.warn('[Multiplayer] Invalid match start FEN received:', err);
+        }
 
         let nextRole: MultiplayerRole = 'spectator';
         if (event.state.white?.id === myPlayerId) {

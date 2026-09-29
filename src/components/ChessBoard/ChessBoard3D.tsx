@@ -22,7 +22,8 @@ export interface ChessBoard3DProps {
   disabled?: boolean;
   lastMove?: { from: string; to: string } | null;
   bestMoveHint?: { from: string; to: string } | null;
-  boardTheme?: string;
+  boardTheme?: 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble' | 'cobalt' | string;
+  onChangeTheme?: (theme: 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble' | 'cobalt') => void;
   showCoordinates?: boolean;
   showLegalMoves?: boolean;
   autoQueen?: boolean;
@@ -39,8 +40,16 @@ function map2DThemeTo3D(theme2D?: string): Board3DThemeId {
   return 'wood';
 }
 
+function map3DThemeTo2D(theme3D: Board3DThemeId): 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble' | 'cobalt' {
+  if (theme3D === 'royal') return 'emerald';
+  if (theme3D === 'cyber') return 'cyber';
+  if (theme3D === 'marble') return 'marble';
+  return 'wood';
+}
+
 function squareToWorld(square: string, isFlipped: boolean = false): { x: number; z: number } {
-  const fileIdx = FILES.indexOf(square[0] as any);
+  const fileChar = square[0] as typeof FILES[number];
+  const fileIdx = FILES.indexOf(fileChar);
   const rankIdx = parseInt(square[1], 10) - 1;
 
   if (fileIdx === -1 || rankIdx < 0 || rankIdx > 7) {
@@ -74,20 +83,21 @@ function worldToSquare(x: number, z: number, isFlipped: boolean = false): string
   return `${FILES[fileIdx]}${rankIdx + 1}`;
 }
 
-function recursivelyDispose(obj: THREE.Object3D) {
-  if ((obj as any).geometry) {
-    (obj as any).geometry.dispose();
+function recursivelyDispose(obj: THREE.Object3D, isSharedPieceMesh = false) {
+  if (!isSharedPieceMesh && (obj as THREE.Mesh).geometry) {
+    (obj as THREE.Mesh).geometry.dispose();
   }
-  if ((obj as any).material) {
-    if (Array.isArray((obj as any).material)) {
-      (obj as any).material.forEach((mat: THREE.Material) => mat.dispose());
+  if ((obj as THREE.Mesh).material) {
+    const mat = (obj as THREE.Mesh).material;
+    if (Array.isArray(mat)) {
+      mat.forEach((m) => m.dispose());
     } else {
-      (obj as any).material.dispose();
+      mat.dispose();
     }
   }
   while (obj.children && obj.children.length > 0) {
     const child = obj.children[0];
-    recursivelyDispose(child);
+    recursivelyDispose(child, isSharedPieceMesh);
     obj.remove(child);
   }
 }
@@ -100,24 +110,18 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
   disabled = false,
   lastMove,
   bestMoveHint,
-  boardTheme,
+  boardTheme = 'wood',
+  onChangeTheme,
   showCoordinates = true,
   showLegalMoves = true,
   autoQueen = false,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
-  const [themeId, setThemeId] = useState<Board3DThemeId>(() => map2DThemeTo3D(boardTheme));
+  const themeId = useMemo<Board3DThemeId>(() => map2DThemeTo3D(boardTheme), [boardTheme]);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [promotionPending, setPromotionPending] = useState<{ from: string; to: string } | null>(null);
   const [autoRotate, setAutoRotate] = useState<boolean>(false);
   const [cameraPreset, setCameraPreset] = useState<'perspective' | 'top' | 'isometric'>('perspective');
-
-  // Synchronize with external 2D theme if boardTheme changes
-  useEffect(() => {
-    if (boardTheme) {
-      setThemeId(map2DThemeTo3D(boardTheme));
-    }
-  }, [boardTheme]);
 
   // Three.js instances
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -132,11 +136,44 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
 
   // Demand-driven rendering trigger
   const needsRenderRef = useRef<boolean>(true);
-  const startLoopRef = useRef<(() => void) | null>(null);
+  const animationFrameIdRef = useRef<number | null>(null);
+  const isRunningRef = useRef<boolean>(true);
+
+  const renderFrame = useCallback(() => {
+    if (!isRunningRef.current) return;
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+
+    if (!renderer || !scene || !camera) return;
+
+    let controlsActive = false;
+    if (controls) {
+      controlsActive = controls.update();
+    }
+
+    const shouldRender = needsRenderRef.current || controlsActive || (controls?.autoRotate ?? false);
+
+    if (shouldRender) {
+      renderer.render(scene, camera);
+      needsRenderRef.current = false;
+    }
+
+    // Continue loop ONLY if controls are actively damping or autoRotate is spinning
+    if (controlsActive || (controls?.autoRotate ?? false)) {
+      animationFrameIdRef.current = requestAnimationFrame(renderFrame);
+    } else {
+      animationFrameIdRef.current = null;
+    }
+  }, []);
+
   const requestRender = useCallback(() => {
     needsRenderRef.current = true;
-    if (startLoopRef.current) startLoopRef.current();
-  }, []);
+    if (animationFrameIdRef.current === null && isRunningRef.current) {
+      animationFrameIdRef.current = requestAnimationFrame(renderFrame);
+    }
+  }, [renderFrame]);
 
   const theme = BOARD_3D_THEMES[themeId] || BOARD_3D_THEMES.wood;
 
@@ -203,7 +240,7 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
-    // Orbit Controls
+    // Orbit Controls with responsive damping and change notifications
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
@@ -213,11 +250,9 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
     controls.target.set(0, 0, 0);
     controlsRef.current = controls;
 
-    // Trigger render when user orbits or zooms
-    controls.addEventListener('change', () => {
-      needsRenderRef.current = true;
-      if (startLoopRef.current) startLoopRef.current();
-    });
+    // Trigger demand-driven render when user orbits, zooms, or begins gesture
+    controls.addEventListener('change', requestRender);
+    controls.addEventListener('start', requestRender);
 
     // Groups
     const piecesGroup = new THREE.Group();
@@ -236,8 +271,7 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
-      needsRenderRef.current = true;
-      if (startLoopRef.current) startLoopRef.current();
+      requestRender();
     };
 
     const resizeObserver = new ResizeObserver(() => {
@@ -246,54 +280,25 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
     resizeObserver.observe(container);
     window.addEventListener('resize', handleResize);
 
-    // Animation Loop (Render only when dirty or autoRotate is active)
-    let animationFrameId: number | null = null;
-    let isRunning = true;
-
-    const startLoop = () => {
-      if (!isRunning) return;
-      if (animationFrameId === null) {
-        animationFrameId = requestAnimationFrame(animate);
-      }
-    };
-
-    startLoopRef.current = startLoop;
-
-    const animate = () => {
-      if (!isRunning) return;
-
-      let dampingActive = false;
-      if (controls) {
-        dampingActive = controls.update();
-        if (controls.autoRotate) {
-          needsRenderRef.current = true;
-        }
-      }
-
-      if (needsRenderRef.current || dampingActive) {
-        renderer.render(scene, camera);
-        needsRenderRef.current = false;
-        animationFrameId = requestAnimationFrame(animate);
-      } else {
-        animationFrameId = null;
-      }
-    };
-    startLoop();
+    // Kick off initial demand-driven frame
+    requestRender();
 
     return () => {
-      isRunning = false;
-      startLoopRef.current = null;
-      if (animationFrameId !== null) {
-        cancelAnimationFrame(animationFrameId);
+      isRunningRef.current = false;
+      if (animationFrameIdRef.current !== null) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
       }
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
 
+      controls.removeEventListener('change', requestRender);
+      controls.removeEventListener('start', requestRender);
       controls.dispose();
 
-      // Dispose all scene objects
+      // Dispose scene objects safely (without destroying static cached geometries)
       scene.children.forEach((child) => {
-        recursivelyDispose(child);
+        recursivelyDispose(child, child === piecesGroupRef.current);
       });
       scene.clear();
 
@@ -302,7 +307,7 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
         container.removeChild(renderer.domElement);
       }
     };
-  }, []);
+  }, [isFlipped, requestRender]);
 
   // Update camera on flip
   useEffect(() => {
@@ -736,7 +741,7 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
   };
 
   return (
-    <div className="relative w-full aspect-square max-w-[min(94vw,540px,72vh)] mx-auto rounded-2xl overflow-hidden bg-[#070c14] border border-slate-800 shadow-xl group select-none">
+    <div className="relative w-full aspect-square max-w-[min(94vw,520px,64vh)] mx-auto rounded-2xl overflow-hidden bg-[#070c14] border border-slate-800 shadow-xl group select-none">
       {/* Three.js Canvas Mount */}
       <div
         ref={mountRef}
@@ -793,7 +798,10 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
           <select
             value={themeId}
             onChange={(e) => {
-              setThemeId(e.target.value as Board3DThemeId);
+              const selected3D = e.target.value as Board3DThemeId;
+              if (onChangeTheme) {
+                onChangeTheme(map3DThemeTo2D(selected3D));
+              }
               requestRender();
             }}
             aria-label="Select 3D Board Theme"

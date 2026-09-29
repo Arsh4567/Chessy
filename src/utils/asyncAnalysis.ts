@@ -88,8 +88,8 @@ export function parseGameMovesInstantly(
 
   return {
     analyzedMoves,
-    whiteAccuracy: 95.0,
-    blackAccuracy: 95.0,
+    whiteAccuracy: null,
+    blackAccuracy: null,
     whiteBrilliants: 0,
     blackBrilliants: 0,
     whiteBests: 0,
@@ -244,8 +244,8 @@ export function analyzeGameProgressively(
 
   const initialGame: AnalyzedGame = {
     analyzedMoves: initialMoves,
-    whiteAccuracy: 95.0,
-    blackAccuracy: 95.0,
+    whiteAccuracy: null,
+    blackAccuracy: null,
     whiteBrilliants: 0,
     blackBrilliants: 0,
     whiteBests: 0,

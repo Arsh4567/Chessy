@@ -208,5 +208,18 @@ service cloud.firestore {
         (request.resource.data.status == 'online' || request.resource.data.status == 'in-game' || request.resource.data.status == 'offline');
       allow delete: if isOwner(userId);
     }
+
+    // 12. Bug Reports & Automated Jules AI Agent Sessions
+    match /bug_reports/{bugId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        (request.auth.token.email != null && request.auth.token.email == 'sewasingh13111944@gmail.com')
+      );
+      allow create: if true; // Allow anonymous or logged-in users to submit bug reports
+      allow update, delete: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        (request.auth.token.email != null && request.auth.token.email == 'sewasingh13111944@gmail.com')
+      );
+    }
   }
 }

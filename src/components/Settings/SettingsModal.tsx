@@ -34,7 +34,8 @@ import {
   Timer,
   CheckCircle2,
   Gamepad2,
-  Cpu
+  Cpu,
+  Bug
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -42,6 +43,7 @@ interface SettingsModalProps {
   onClose: () => void;
   preferences: UserPreferences;
   onUpdatePreferences: (prefs: UserPreferences) => void;
+  onOpenReportBug?: () => void;
 }
 
 type SettingsSection = 'gameplay' | 'board' | 'engine' | 'notifications';
@@ -51,6 +53,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   preferences,
   onUpdatePreferences,
+  onOpenReportBug,
 }) => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('gameplay');
   const [notificationConfig, setNotificationConfig] = useState<PushNotificationConfig>(loadNotificationConfig);
@@ -523,6 +526,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </ChessyButton>
               </div>
             </div>
+          </div>
+        )}
+        {/* Footer Support Bar */}
+        {onOpenReportBug && (
+          <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+            <span className="text-slate-400">Notice a glitch or incorrect engine behavior?</span>
+            <button
+              onClick={() => {
+                onClose();
+                onOpenReportBug();
+              }}
+              className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Bug className="w-3.5 h-3.5" />
+              <span>Report a Problem</span>
+            </button>
           </div>
         )}
       </div>

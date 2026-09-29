@@ -14,7 +14,9 @@ import {
   Cloud,
   ChevronDown,
   LayoutDashboard,
-  MoreHorizontal
+  MoreHorizontal,
+  Bug,
+  Terminal
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -33,6 +35,8 @@ interface NavbarProps {
   currentTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   onOpenSettings: () => void;
+  onOpenReportBug?: () => void;
+  onOpenAdminTriage?: () => void;
   puzzleRating?: number;
   multiplayerRating?: number;
   multiplayerGamesPlayed?: number;
@@ -42,6 +46,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentTab,
   onSelectTab,
   onOpenSettings,
+  onOpenReportBug,
+  onOpenAdminTriage,
   puzzleRating = 1500,
   multiplayerRating = 800,
   multiplayerGamesPlayed = 0,
@@ -180,6 +186,46 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </button>
                     );
                   })}
+
+                  <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 border-t border-slate-800/80 mt-1 mb-0.5">
+                    Engineering & Support
+                  </div>
+
+                  {onOpenReportBug && (
+                    <button
+                      onClick={() => {
+                        setMoreDropdownOpen(false);
+                        onOpenReportBug();
+                      }}
+                      className="w-full px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2.5 text-amber-300 hover:bg-amber-500/10 hover:text-amber-200 transition-colors cursor-pointer text-left"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 shrink-0">
+                        <Bug className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold">Report a Problem</div>
+                        <div className="text-[10px] text-amber-400/80 font-normal truncate">Submit bug with auto-diagnostics</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {onOpenAdminTriage && (
+                    <button
+                      onClick={() => {
+                        setMoreDropdownOpen(false);
+                        onOpenAdminTriage();
+                      }}
+                      className="w-full px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2.5 text-sky-300 hover:bg-sky-500/10 hover:text-sky-200 transition-colors cursor-pointer text-left"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-sky-500/15 flex items-center justify-center text-sky-400 shrink-0">
+                        <Terminal className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0 flex items-center justify-between gap-1">
+                        <div className="truncate font-semibold">Jules Agent Triage</div>
+                        <span className="px-1 py-0.2 rounded bg-sky-400/20 text-[9px] font-mono text-sky-300">ADMIN</span>
+                      </div>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -225,6 +271,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span>{isAnonymous ? 'Save Progress' : 'Sign In'}</span>
+              </button>
+            )}
+
+            {/* Bug Report Button */}
+            {onOpenReportBug && (
+              <button
+                onClick={onOpenReportBug}
+                className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 text-amber-400/80 hover:text-amber-300 hover:border-amber-500/40 hover:bg-slate-800/60 transition-all cursor-pointer focus-visible:outline-amber-400"
+                title="Report a Problem"
+                aria-label="Report a Problem"
+              >
+                <Bug className="w-4 h-4" />
               </button>
             )}
 

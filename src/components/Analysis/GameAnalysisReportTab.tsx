@@ -26,20 +26,24 @@ export const GameAnalysisReportTab: React.FC<GameAnalysisReportTabProps> = ({
             <div className="text-[11px] font-bold text-slate-300">Overall Accuracy</div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <div className="text-slate-400 text-[10px]">White ({analyzedData.whiteAccuracy}%)</div>
+                <div className="text-slate-400 text-[10px]">
+                  White ({analyzedData.whiteAccuracy != null ? `${analyzedData.whiteAccuracy}%` : 'Calculating...'})
+                </div>
                 <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden mt-1">
                   <div
-                    className="bg-sky-400 h-full rounded-full"
-                    style={{ width: `${analyzedData.whiteAccuracy}%` }}
+                    className="bg-sky-400 h-full rounded-full transition-all duration-300"
+                    style={{ width: `${analyzedData.whiteAccuracy ?? 0}%` }}
                   />
                 </div>
               </div>
               <div>
-                <div className="text-slate-400 text-[10px]">Black ({analyzedData.blackAccuracy}%)</div>
+                <div className="text-slate-400 text-[10px]">
+                  Black ({analyzedData.blackAccuracy != null ? `${analyzedData.blackAccuracy}%` : 'Calculating...'})
+                </div>
                 <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden mt-1">
                   <div
-                    className="bg-sky-400 h-full rounded-full"
-                    style={{ width: `${analyzedData.blackAccuracy}%` }}
+                    className="bg-sky-400 h-full rounded-full transition-all duration-300"
+                    style={{ width: `${analyzedData.blackAccuracy ?? 0}%` }}
                   />
                 </div>
               </div>

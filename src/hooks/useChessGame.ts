@@ -75,14 +75,14 @@ export function useChessGame({
     isOpen: boolean;
     result: 'win' | 'loss' | 'draw';
     reason: string;
-    whiteAccuracy: number;
-    blackAccuracy: number;
+    whiteAccuracy: number | null;
+    blackAccuracy: number | null;
   }>({
     isOpen: false,
     result: 'win',
     reason: '',
-    whiteAccuracy: 88.5,
-    blackAccuracy: 82.1,
+    whiteAccuracy: null,
+    blackAccuracy: null,
   });
 
   // Live Stockfish Engine Evaluation State

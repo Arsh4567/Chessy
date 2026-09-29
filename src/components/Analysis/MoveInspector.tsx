@@ -42,16 +42,24 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
   onReturnToMainline,
 }) => {
   const [explanation, setExplanation] = useState<string | null>(null);
+  const [isAiGenerated, setIsAiGenerated] = useState<boolean>(false);
   const [isLoadingExplanation, setIsLoadingExplanation] = useState<boolean>(false);
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
 
   const activeReqIdRef = useRef<number>(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Clean up speech synthesis and cancel stale AI explanation requests on move change
   useEffect(() => {
     activeReqIdRef.current += 1;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
     setExplanation(null);
+    setIsAiGenerated(false);
     setShowExplanation(false);
     setIsLoadingExplanation(false);
 
@@ -61,9 +69,12 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
     }
   }, [currentMoveIdx, currentMove?.san]);
 
-  // Clean up speech on component unmount
+  // Clean up speech and in-flight fetch on component unmount
   useEffect(() => {
     return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
@@ -81,6 +92,12 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
     }
 
     const currentReqId = ++activeReqIdRef.current;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setShowExplanation(true);
     setIsLoadingExplanation(true);
 
@@ -95,16 +112,23 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
         openingName: currentMove.openingName,
         fen: currentFen,
         moveNumber: Math.floor(currentMoveIdx / 2) + 1,
+        signal: controller.signal,
       });
 
       // Guard against stale response
       if (activeReqIdRef.current === currentReqId) {
-        setExplanation(result);
+        setExplanation(result.explanation);
+        setIsAiGenerated(result.isAiGenerated);
       }
-    } catch (err) {
-      console.error('Error in handleExplainMove:', err);
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || controller.signal.aborted) {
+        return; // Normal cancellation
+      }
+      console.warn('[MoveInspector] Notice in handleExplainMove:', err?.message || err);
       if (activeReqIdRef.current === currentReqId) {
-        setExplanation('In this position, prioritize king safety, piece development, and control of central squares.');
+        const side = currentMove.color === 'w' ? 'White' : 'Black';
+        setExplanation(`${side} played ${currentMove.san}. In this position, prioritize king safety, piece coordination, and control of central squares.`);
+        setIsAiGenerated(false);
       }
     } finally {
       if (activeReqIdRef.current === currentReqId) {
@@ -285,8 +309,12 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
               </div>
               <span className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
                 <span>Beginner Coach Explanation</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-400/30 font-mono">
-                  Gemini AI
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                  isAiGenerated
+                    ? 'bg-sky-500/20 text-sky-300 border border-sky-400/30'
+                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+                }`}>
+                  {isAiGenerated ? 'Gemini AI' : 'Positional Guide'}
                 </span>
               </span>
             </div>

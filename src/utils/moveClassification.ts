@@ -240,14 +240,16 @@ export function calculateMoveAccuracy(evalLoss: number, isTopMove: boolean = fal
 /**
  * Calculates aggregate White and Black game accuracy from analyzed move sequence
  */
-export function calculateGameAccuracy(moves: AnalyzedMove[]): { whiteAccuracy: number; blackAccuracy: number } {
+export function calculateGameAccuracy(moves: AnalyzedMove[]): { whiteAccuracy: number | null; blackAccuracy: number | null } {
   let whiteSum = 0;
   let whiteCount = 0;
   let blackSum = 0;
   let blackCount = 0;
 
   for (const m of moves) {
-    // If classification is brilliant/great/best/book, count as 100% accuracy
+    // Only calculate moves that have genuinely been analyzed by Stockfish
+    if (!m.classification) continue;
+
     let moveAcc = 100;
     if (m.classification === 'brilliant' || m.classification === 'great' || m.classification === 'best' || m.classification === 'book') {
       moveAcc = 100;
@@ -273,8 +275,8 @@ export function calculateGameAccuracy(moves: AnalyzedMove[]): { whiteAccuracy: n
   }
 
   return {
-    whiteAccuracy: whiteCount > 0 ? Math.round((whiteSum / whiteCount) * 10) / 10 : 95.0,
-    blackAccuracy: blackCount > 0 ? Math.round((blackSum / blackCount) * 10) / 10 : 95.0,
+    whiteAccuracy: whiteCount > 0 ? Math.round((whiteSum / whiteCount) * 10) / 10 : null,
+    blackAccuracy: blackCount > 0 ? Math.round((blackSum / blackCount) * 10) / 10 : null,
   };
 }
 

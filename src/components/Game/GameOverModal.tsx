@@ -11,8 +11,8 @@ interface GameOverModalProps {
   reason: string;
   eloChange: number;
   newElo: number;
-  whiteAccuracy?: number;
-  blackAccuracy?: number;
+  whiteAccuracy?: number | null;
+  blackAccuracy?: number | null;
   openingName?: string;
   onAnalyze: () => void;
   onRematch: () => void;
@@ -25,8 +25,8 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   reason,
   eloChange,
   newElo,
-  whiteAccuracy = 85.4,
-  blackAccuracy = 81.2,
+  whiteAccuracy,
+  blackAccuracy,
   openingName,
   onAnalyze,
   onRematch,
@@ -130,12 +130,16 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           </div>
           <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-slate-800/80">
             <div className="text-center">
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">White</span>
-              <span className="text-sm font-mono font-bold text-slate-100 tabular-nums">{whiteAccuracy}%</span>
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">White Accuracy</span>
+              <span className="text-sm font-mono font-bold text-slate-100 tabular-nums">
+                {whiteAccuracy != null ? `${whiteAccuracy}%` : '—'}
+              </span>
             </div>
             <div className="text-center border-l border-slate-800">
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Black</span>
-              <span className="text-sm font-mono font-bold text-slate-100 tabular-nums">{blackAccuracy}%</span>
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Black Accuracy</span>
+              <span className="text-sm font-mono font-bold text-slate-100 tabular-nums">
+                {blackAccuracy != null ? `${blackAccuracy}%` : '—'}
+              </span>
             </div>
           </div>
         </div>

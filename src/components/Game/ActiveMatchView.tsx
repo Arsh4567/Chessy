@@ -80,7 +80,7 @@ export const ActiveMatchView: React.FC<ActiveMatchViewProps> = ({
       {/* Main Chess Arena (Board & Clocks) */}
       <div className="lg:col-span-7 xl:col-span-7 flex flex-col items-center gap-2.5 w-full">
         {/* Top Header Bar with 2D / 3D Mode Toggle */}
-        <div className="w-full max-w-[min(94vw,560px,76vh)] flex items-center justify-between px-1">
+        <div className="w-full max-w-[min(94vw,520px,64vh)] flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Board View</span>
           </div>
@@ -112,7 +112,7 @@ export const ActiveMatchView: React.FC<ActiveMatchViewProps> = ({
         </div>
 
         {/* Top Player (Opponent) */}
-        <div className="w-full max-w-[min(94vw,560px,76vh)]">
+        <div className="w-full max-w-[min(94vw,520px,64vh)]">
           <PlayerCard
             name={isFlipped ? 'You' : opponent.name}
             avatar={isFlipped ? '♟️' : opponent.avatar}
@@ -137,6 +137,8 @@ export const ActiveMatchView: React.FC<ActiveMatchViewProps> = ({
               onMove={onExecuteMove}
               disabled={!inActiveMatch}
               lastMove={lastMove}
+              boardTheme={preferences.boardTheme}
+              onChangeTheme={onChangeTheme}
               showCoordinates={preferences.showCoordinates}
               showLegalMoves={preferences.showLegalMoves}
               autoQueen={preferences.autoQueen}
@@ -159,7 +161,7 @@ export const ActiveMatchView: React.FC<ActiveMatchViewProps> = ({
         </div>
 
         {/* Bottom Player (You) */}
-        <div className="w-full max-w-[min(94vw,560px,76vh)]">
+        <div className="w-full max-w-[min(94vw,520px,64vh)]">
           <PlayerCard
             name={isFlipped ? opponent.name : 'You'}
             avatar={isFlipped ? opponent.avatar : '♟️'}
@@ -175,7 +177,7 @@ export const ActiveMatchView: React.FC<ActiveMatchViewProps> = ({
         </div>
 
         {/* Tactical Match Controls */}
-        <div className="w-full max-w-[min(94vw,560px,76vh)]">
+        <div className="w-full max-w-[min(94vw,520px,64vh)]">
           <GameControls
             mode={gameMode}
             onResign={onResign}
@@ -192,7 +194,7 @@ export const ActiveMatchView: React.FC<ActiveMatchViewProps> = ({
       </div>
 
       {/* Match Console Sidebar (Move History, Game Status, Info) */}
-      <div className="lg:col-span-5 xl:col-span-5 flex flex-col gap-3 w-full max-w-[min(94vw,470px,68vh)] lg:max-w-none mx-auto">
+      <div className="lg:col-span-5 xl:col-span-5 flex flex-col gap-3 w-full max-w-[min(94vw,520px,64vh)] lg:max-w-none mx-auto">
         {/* Match Header Badge */}
         <div className="p-3 bg-[#0c1424] border border-slate-800 rounded-xl flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-2">

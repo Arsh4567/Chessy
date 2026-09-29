@@ -57,8 +57,8 @@ export interface AnalyzedMove {
 }
 
 export interface AnalyzedGame {
-  whiteAccuracy: number;
-  blackAccuracy: number;
+  whiteAccuracy: number | null;
+  blackAccuracy: number | null;
   analyzedMoves: AnalyzedMove[];
   whiteBrilliants: number;
   blackBrilliants: number;
