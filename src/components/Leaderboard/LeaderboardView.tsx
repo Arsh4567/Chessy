@@ -272,7 +272,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                       ? 'bg-slate-900 border-sky-400 text-white shadow-md'
                       : isAchieved
                       ? 'bg-slate-900/60 border-slate-800'
-                      : 'bg-slate-950/40 border-slate-850 opacity-60'
+                      : 'bg-slate-950/40 border-slate-800 opacity-60'
                   }`}
                 >
                   <div className="flex items-center gap-4">

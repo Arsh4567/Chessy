@@ -193,7 +193,7 @@ export const MultiplayerView: React.FC<MultiplayerViewProps> = ({
                     className={`p-3 rounded-2xl border text-center transition-all cursor-pointer ${
                       localTimeControl.id === tc.id
                         ? 'bg-sky-500 text-slate-950 border-sky-400 font-bold shadow-md shadow-sky-500/20'
-                        : 'bg-slate-950/60 hover:bg-slate-850 text-slate-300 border-slate-800'
+                        : 'bg-slate-950/60 hover:bg-slate-900 text-slate-300 border-slate-800'
                     }`}
                   >
                     <div className="text-xs font-bold">{tc.name}</div>
@@ -214,7 +214,7 @@ export const MultiplayerView: React.FC<MultiplayerViewProps> = ({
                   className={`p-4 rounded-2xl border flex items-center justify-center gap-3 transition-all cursor-pointer ${
                     localSide === 'w'
                       ? 'bg-slate-800 border-sky-500/60 ring-1 ring-sky-500/40 text-white font-bold'
-                      : 'bg-slate-950/60 hover:bg-slate-850 text-slate-400 border-slate-800'
+                      : 'bg-slate-950/60 hover:bg-slate-900 text-slate-400 border-slate-800'
                   }`}
                 >
                   <span className="text-2xl">♔</span>
@@ -228,7 +228,7 @@ export const MultiplayerView: React.FC<MultiplayerViewProps> = ({
                   className={`p-4 rounded-2xl border flex items-center justify-center gap-3 transition-all cursor-pointer ${
                     localSide === 'b'
                       ? 'bg-slate-800 border-sky-500/60 ring-1 ring-sky-500/40 text-white font-bold'
-                      : 'bg-slate-950/60 hover:bg-slate-850 text-slate-400 border-slate-800'
+                      : 'bg-slate-950/60 hover:bg-slate-900 text-slate-400 border-slate-800'
                   }`}
                 >
                   <span className="text-2xl">♚</span>

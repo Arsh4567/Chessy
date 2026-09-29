@@ -579,7 +579,7 @@ export const MultiplayerMatch: React.FC<MultiplayerMatchProps> = ({
 
                 <button
                   onClick={onLeaveRoom}
-                  className="w-full py-2 rounded-xl bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
+                  className="w-full py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
                 >
                   Return to Lobby
                 </button>
@@ -596,7 +596,7 @@ export const MultiplayerMatch: React.FC<MultiplayerMatchProps> = ({
                   onOfferDraw();
                 }}
                 disabled={drawOfferSent}
-                className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-semibold flex items-center justify-center gap-1.5 border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+                className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center justify-center gap-1.5 border border-slate-700 transition-colors cursor-pointer disabled:opacity-50"
                 title="Offer a mutual draw"
               >
                 <Handshake className="w-3.5 h-3.5 text-amber-400" />

@@ -26,16 +26,16 @@ export function ChessyTabs<T extends string = string>({
 }: ChessyTabsProps<T>) {
   if (variant === 'underline') {
     return (
-      <div className={`flex items-center gap-4 sm:gap-6 border-b border-slate-800 overflow-x-auto ${className}`}>
+      <div className={`flex items-center gap-3 sm:gap-6 border-b border-slate-800 overflow-x-auto ${className}`}>
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => onChange(tab.id)}
-              className={`pb-3 font-semibold transition-colors relative flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+              className={`pb-2.5 font-semibold transition-colors relative flex items-center gap-2 cursor-pointer whitespace-nowrap ${
                 size === 'sm' ? 'text-xs' : 'text-xs sm:text-sm'
-              } ${isActive ? 'text-sky-400' : 'text-slate-400 hover:text-slate-200'}`}
+              } ${isActive ? 'text-sky-400 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
             >
               {tab.icon && <span>{tab.icon}</span>}
               <span>{tab.label}</span>
@@ -52,7 +52,7 @@ export function ChessyTabs<T extends string = string>({
 
   // Pill variant
   return (
-    <div className={`flex items-center gap-1.5 p-1 bg-slate-900/90 border border-slate-800 rounded-xl overflow-x-auto ${className}`}>
+    <div className={`flex items-center gap-1.5 p-1 bg-[#0c1424] border border-slate-800 rounded-xl overflow-x-auto ${className}`}>
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
         return (
@@ -63,8 +63,8 @@ export function ChessyTabs<T extends string = string>({
               size === 'sm' ? 'text-xs px-2.5 py-1' : 'text-xs sm:text-sm px-3.5 py-1.5'
             } ${
               isActive
-                ? 'bg-slate-800 text-white font-bold shadow-sm border border-slate-700'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/60'
+                ? 'bg-slate-800 text-sky-400 font-bold shadow-sm border border-slate-700/80'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
             }`}
           >
             {tab.icon && <span>{tab.icon}</span>}

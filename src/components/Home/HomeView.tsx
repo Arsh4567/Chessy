@@ -139,7 +139,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
               <button
                 onClick={() => onNavigate('analyze')}
-                className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-750 active:bg-slate-850 border border-slate-700/80 text-slate-100 font-semibold text-sm transition-all duration-150 cursor-pointer flex items-center gap-2 shadow-sm"
+                className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-800 border border-slate-700/80 text-slate-100 font-semibold text-sm transition-all duration-150 cursor-pointer flex items-center gap-2 shadow-sm"
               >
                 <Search className="w-4 h-4 text-sky-400" />
                 <span>Analyze with AI Coach</span>
@@ -147,7 +147,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
               <button
                 onClick={() => onNavigate('learn')}
-                className="px-5 py-3 rounded-xl bg-slate-850 hover:bg-slate-800 active:bg-slate-900 border border-slate-700/60 text-slate-200 font-semibold text-sm transition-all duration-150 cursor-pointer flex items-center gap-2 shadow-sm"
+                className="px-5 py-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:bg-slate-800 border border-slate-700/60 text-slate-200 font-semibold text-sm transition-all duration-150 cursor-pointer flex items-center gap-2 shadow-sm"
               >
                 <GraduationCap className="w-4 h-4 text-indigo-400" />
                 <span>Beginner Academy</span>
@@ -524,7 +524,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <div className="pt-2">
             <button
               onClick={() => onNavigate('learn')}
-              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-850 border border-slate-700 text-white font-semibold text-xs flex items-center gap-2 cursor-pointer transition-all shadow-sm"
+              className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-800 border border-slate-700 text-white font-semibold text-xs flex items-center gap-2 cursor-pointer transition-all shadow-sm"
             >
               <span>Explore 500+ Openings</span>
               <ArrowRight className="w-4 h-4 text-emerald-400" />
@@ -537,7 +537,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             <div
               key={`${op.eco}_${op.name}_${idx}`}
               onClick={() => onNavigate('learn')}
-              className="p-4 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm"
+              className="p-4 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm"
             >
               <div className="min-w-0 space-y-1">
                 <div className="flex items-center gap-2">
@@ -644,7 +644,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
           <button
             onClick={() => onNavigate('learn')}
-            className="px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-850 border border-slate-700 text-white font-semibold text-xs sm:text-sm cursor-pointer transition-all flex items-center gap-2 shadow-sm"
+            className="px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-800 border border-slate-700 text-white font-semibold text-xs sm:text-sm cursor-pointer transition-all flex items-center gap-2 shadow-sm"
           >
             <BookOpen className="w-4 h-4 text-emerald-400" />
             <span>Master Openings & Techniques</span>

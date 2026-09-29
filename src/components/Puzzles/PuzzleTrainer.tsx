@@ -522,7 +522,7 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
                   className={`flex items-center gap-2 p-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer text-left ${
                     isSelected
                       ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm'
-                      : 'bg-slate-850 hover:bg-slate-800 text-slate-400 border-slate-750'
+                      : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800'
                   }`}
                 >
                   <span className="text-base shrink-0">{theme.icon}</span>
@@ -785,7 +785,7 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
               <button
                 onClick={() => setSolutionRevealed(true)}
                 disabled={status === 'solved'}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
               >
                 <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
                 <span>Show Solution</span>
@@ -793,7 +793,7 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
 
               <button
                 onClick={handleFetchRandomLichess}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-amber-300 text-xs font-bold transition-colors cursor-pointer"
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 text-xs font-bold transition-colors cursor-pointer"
                 title="Fetch another random puzzle from Lichess"
               >
                 <Dices className="w-3.5 h-3.5 text-amber-400" />

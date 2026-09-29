@@ -43,12 +43,12 @@ export const ChessyButton = React.forwardRef<HTMLButtonElement, ChessyButtonProp
 
   const variantClasses: Record<ButtonVariant, string> = {
     primary: 'bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-950 font-bold border border-transparent shadow-sm focus-visible:outline-sky-400',
-    secondary: 'bg-slate-800 hover:bg-slate-700 active:bg-slate-850 text-slate-100 border border-slate-700/80 hover:border-slate-600 focus-visible:outline-slate-400 shadow-sm',
+    secondary: 'bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-100 border border-slate-700/80 hover:border-slate-600 focus-visible:outline-slate-400 shadow-sm',
     ghost: 'bg-transparent hover:bg-slate-800/60 active:bg-slate-800 text-slate-300 hover:text-white border border-transparent focus-visible:outline-slate-400',
     danger: 'bg-rose-500/15 hover:bg-rose-500/25 active:bg-rose-500/35 text-rose-300 hover:text-rose-200 border border-rose-500/30 focus-visible:outline-rose-400',
     success: 'bg-emerald-500/15 hover:bg-emerald-500/25 active:bg-emerald-500/35 text-emerald-300 hover:text-emerald-200 border border-emerald-500/30 focus-visible:outline-emerald-400',
     accent: 'bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold border border-indigo-400/30 shadow-sm focus-visible:outline-indigo-400',
-    icon: 'bg-slate-900/80 hover:bg-slate-800 active:bg-slate-850 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 focus-visible:outline-sky-400',
+    icon: 'bg-slate-900/80 hover:bg-slate-800 active:bg-slate-950 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700 focus-visible:outline-sky-400',
   };
 
   return (

@@ -68,7 +68,7 @@ export const LichessMoveRow: React.FC<LichessMoveRowProps> = ({
         className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl border transition-all duration-200 ${
           isBest
             ? 'bg-gradient-to-r from-emerald-950/85 via-emerald-900/40 to-slate-900/95 border-emerald-400/90 shadow-[0_0_16px_rgba(16,185,129,0.25)] ring-1 ring-emerald-400/60'
-            : 'bg-slate-950/50 hover:bg-slate-850/80 border-slate-800/90 hover:border-amber-500/40'
+            : 'bg-slate-950/50 hover:bg-slate-800/80 border-slate-800/90 hover:border-amber-500/40'
         }`}
       >
         {/* Clickable Move Selector */}

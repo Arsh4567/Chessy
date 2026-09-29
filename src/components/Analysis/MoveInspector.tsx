@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AnalyzedMove } from '../../types/chess';
 import { MoveMark } from '../ChessBoard/MoveMark';
 import { fetchBeginnerMoveExplanation } from '../../utils/explainMoveApi';
@@ -10,9 +10,7 @@ import {
   Sparkles, 
   Bot, 
   X, 
-  Lightbulb, 
   Loader2,
-  GraduationCap,
   Volume2
 } from 'lucide-react';
 
@@ -48,26 +46,41 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
 
-  // Reset explanation panel when user steps to a different move
+  const activeReqIdRef = useRef<number>(0);
+
+  // Clean up speech synthesis and cancel stale AI explanation requests on move change
   useEffect(() => {
+    activeReqIdRef.current += 1;
     setExplanation(null);
     setShowExplanation(false);
     setIsLoadingExplanation(false);
-    if ('speechSynthesis' in window) {
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       setIsSpeaking(false);
     }
   }, [currentMoveIdx, currentMove?.san]);
 
+  // Clean up speech on component unmount
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
   if (!currentMove) return null;
 
   const handleExplainMove = async () => {
+    if (isLoadingExplanation) return;
+
     if (showExplanation && explanation) {
-      // Toggle visibility
       setShowExplanation(!showExplanation);
       return;
     }
 
+    const currentReqId = ++activeReqIdRef.current;
     setShowExplanation(true);
     setIsLoadingExplanation(true);
 
@@ -84,17 +97,24 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
         moveNumber: Math.floor(currentMoveIdx / 2) + 1,
       });
 
-      setExplanation(result);
+      // Guard against stale response
+      if (activeReqIdRef.current === currentReqId) {
+        setExplanation(result);
+      }
     } catch (err) {
       console.error('Error in handleExplainMove:', err);
-      setExplanation('In this position, pay attention to open files, active pieces, and King safety.');
+      if (activeReqIdRef.current === currentReqId) {
+        setExplanation('In this position, prioritize king safety, piece development, and control of central squares.');
+      }
     } finally {
-      setIsLoadingExplanation(false);
+      if (activeReqIdRef.current === currentReqId) {
+        setIsLoadingExplanation(false);
+      }
     }
   };
 
   const handleSpeakExplanation = () => {
-    if (!('speechSynthesis' in window) || !explanation) return;
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !explanation) return;
 
     if (isSpeaking) {
       window.speechSynthesis.cancel();
@@ -114,7 +134,7 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
   };
 
   return (
-    <div className="w-full max-w-[480px] bg-slate-900/90 border border-slate-800 p-3 sm:p-4 rounded-2xl space-y-3 shadow-xl animate-in fade-in duration-150">
+    <div className="w-full max-w-[540px] bg-[#0c1424] border border-slate-800 p-3 sm:p-4 rounded-2xl space-y-3 shadow-sm animate-in fade-in duration-150">
       {/* Top Move Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -122,7 +142,7 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
             Move {Math.floor(currentMoveIdx / 2) + 1}
             {currentMove.color === 'w' ? '.' : '...'}
           </span>
-          <span className="text-sm font-black font-mono text-slate-100 px-2 py-0.5 rounded-lg bg-slate-800">
+          <span className="text-sm font-bold font-mono text-slate-100 px-2 py-0.5 rounded-lg bg-slate-800">
             {currentMove.san}
           </span>
 
@@ -159,7 +179,7 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
 
         <div className="flex items-center gap-2">
           {currentMove.evalBefore !== undefined && (
-            <div className="font-mono text-xs font-bold px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300">
+            <div className="font-mono text-xs font-bold px-2 py-0.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
               <span className={currentMove.evalBefore >= 0 ? 'text-slate-200' : 'text-slate-400'}>
                 {currentMove.evalBefore >= 0 ? `+${currentMove.evalBefore.toFixed(2)}` : currentMove.evalBefore.toFixed(2)}
               </span>
@@ -174,7 +194,8 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
             <button
               onClick={onPrevMove}
               disabled={currentMoveIdx <= 0}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 disabled:opacity-30 text-slate-300 transition-colors cursor-pointer"
+              aria-label="Previous move"
+              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 transition-colors cursor-pointer border border-slate-700/80"
               title="Previous move"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -182,7 +203,8 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
             <button
               onClick={onNextMove}
               disabled={currentMoveIdx >= totalMoves - 1}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 disabled:opacity-30 text-slate-300 transition-colors cursor-pointer"
+              aria-label="Next move"
+              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 transition-colors cursor-pointer border border-slate-700/80"
               title="Next move"
             >
               <ChevronRight className="w-4 h-4" />
@@ -192,7 +214,7 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
       </div>
 
       {/* Engine Technical Commentary */}
-      <div className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/60 space-y-2">
+      <div className="text-xs text-slate-300 leading-relaxed bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80 space-y-2">
         <p>{currentMove.commentary || 'Stockfish positional calculation.'}</p>
         
         <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
@@ -218,7 +240,8 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
             {/* ✨ Gemini AI Beginner Explain Button */}
             <button
               onClick={handleExplainMove}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-sky-500 via-indigo-500 to-purple-600 hover:from-sky-400 hover:to-purple-500 text-white font-bold text-[11px] shadow-md shadow-sky-500/20 cursor-pointer transition-all hover:scale-[1.02] active:scale-95"
+              aria-label="Explain move with AI Coach"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-[11px] shadow-sm cursor-pointer transition-all hover:scale-[1.02] active:scale-95"
               title="Get a human-readable explanation of why this move was good or bad for beginners using Gemini AI"
             >
               <Sparkles className="w-3.5 h-3.5 fill-white/20" />
@@ -228,6 +251,7 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
             {onPlayBestMove && activeBestMoveSan && (
               <button
                 onClick={onPlayBestMove}
+                aria-label={`Play engine choice ${activeBestMoveSan}`}
                 className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-colors cursor-pointer shadow-sm"
                 title="Play the engine's recommended best move on the board"
               >
@@ -239,6 +263,7 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
             {isVariationActive && onReturnToMainline && (
               <button
                 onClick={onReturnToMainline}
+                aria-label="Return to mainline original game"
                 className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 transition-colors cursor-pointer"
                 title="Return to original game"
               >
@@ -250,12 +275,12 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
         </div>
       </div>
 
-      {/* Beginner AI Explanation Box (Animated Pop-down) */}
+      {/* Beginner AI Explanation Box */}
       {showExplanation && (
-        <div className="p-3.5 bg-gradient-to-br from-slate-900 via-indigo-950/40 to-sky-950/30 border border-sky-500/40 rounded-xl space-y-2.5 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-center justify-between pb-1.5 border-b border-sky-500/20">
+        <div className="p-3.5 bg-slate-900 border border-sky-500/40 rounded-xl space-y-2.5 shadow-md animate-in fade-in duration-200">
+          <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-sky-400 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+              <div className="w-6 h-6 rounded-lg bg-sky-500/10 border border-sky-400/30 flex items-center justify-center text-sky-400 shadow-sm">
                 <Bot className="w-3.5 h-3.5" />
               </div>
               <span className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
@@ -270,6 +295,7 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
               {explanation && (
                 <button
                   onClick={handleSpeakExplanation}
+                  aria-label={isSpeaking ? 'Stop speaking explanation' : 'Read explanation aloud'}
                   className={`p-1 rounded-md text-xs transition-colors cursor-pointer ${
                     isSpeaking
                       ? 'bg-sky-500 text-white'
@@ -282,6 +308,7 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
               )}
               <button
                 onClick={() => setShowExplanation(false)}
+                aria-label="Close AI explanation"
                 className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                 title="Close"
               >
@@ -293,7 +320,7 @@ export const MoveInspector: React.FC<MoveInspectorProps> = ({
           {isLoadingExplanation ? (
             <div className="py-4 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
               <Loader2 className="w-5 h-5 animate-spin text-sky-400" />
-              <span className="font-medium animate-pulse">Coach is preparing your explanation...</span>
+              <span className="font-medium animate-pulse">Coach is analyzing this move for beginners...</span>
             </div>
           ) : (
             <div className="text-xs text-slate-200 leading-relaxed font-sans space-y-2">

@@ -190,7 +190,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 Assistance & Controls
               </span>
 
-              <label className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 cursor-pointer hover:bg-slate-850/60 transition-colors">
+              <label className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 cursor-pointer hover:bg-slate-800/60 transition-colors">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-sky-500/10 flex items-center justify-center text-sky-400 shrink-0">
                     {preferences.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
@@ -208,7 +208,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </label>
 
-              <label className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 cursor-pointer hover:bg-slate-850/60 transition-colors">
+              <label className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 cursor-pointer hover:bg-slate-800/60 transition-colors">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-sky-500/10 flex items-center justify-center text-sky-400 shrink-0">
                     <Eye className="w-4 h-4" />
@@ -226,7 +226,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </label>
 
-              <label className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 cursor-pointer hover:bg-slate-850/60 transition-colors">
+              <label className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 cursor-pointer hover:bg-slate-800/60 transition-colors">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 shrink-0">
                     <CheckCircle2 className="w-4 h-4" />
@@ -244,7 +244,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
               </label>
 
-              <label className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 cursor-pointer hover:bg-slate-850/60 transition-colors">
+              <label className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 cursor-pointer hover:bg-slate-800/60 transition-colors">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400 text-sm shrink-0">
                     ♛
@@ -267,7 +267,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* 2. BOARD THEME SETTINGS */}
         {activeSection === 'board' && (
-          <div className="space-y-3 animate-in fade-in duration-150">
+          <div className="space-y-4 animate-in fade-in duration-150">
+            {/* 2D vs 3D Dimension Selector */}
+            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-2.5">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                Board Rendering Engine
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => update('boardDimension', '2d')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    preferences.boardDimension !== '3d'
+                      ? 'bg-slate-800 border-sky-400 text-white shadow-sm'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-slate-100">Classic 2D Vector Board</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">High-speed tournament style with instant rendering</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => update('boardDimension', '3d')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    preferences.boardDimension === '3d'
+                      ? 'bg-slate-800 border-sky-400 text-white shadow-sm'
+                      : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-slate-100">Interactive 3D Perspective</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">WebGL Three.js board with dynamic lighting and camera orbit</div>
+                </button>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between px-1">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                 Select Visual Style

@@ -405,7 +405,7 @@ export const LearnView: React.FC<LearnViewProps> = ({
                         className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 group ${
                           isSelected
                             ? 'bg-sky-950/40 border-sky-500/60 ring-1 ring-sky-500/30'
-                            : 'bg-slate-950/50 hover:bg-slate-850/60 border-slate-800/80 hover:border-slate-700'
+                            : 'bg-slate-950/50 hover:bg-slate-900/60 border-slate-800/80 hover:border-slate-700'
                         }`}
                       >
                         <div className="min-w-0 space-y-0.5">

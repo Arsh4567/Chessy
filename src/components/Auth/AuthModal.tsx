@@ -210,7 +210,7 @@ export const AuthModal: React.FC = () => {
               type="button"
               onClick={handleGoogleSignIn}
               disabled={isSubmitting}
-              className="w-full py-2.5 px-4 rounded-xl bg-slate-800/90 hover:bg-slate-750 border border-slate-700 hover:border-slate-600 text-white text-xs font-bold transition-all flex items-center justify-center gap-3 cursor-pointer shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full py-2.5 px-4 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-white text-xs font-bold transition-all flex items-center justify-center gap-3 cursor-pointer shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                 <path

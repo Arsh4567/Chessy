@@ -55,18 +55,19 @@ export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
   onReturnToMainline,
 }) => {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-slate-900/90 border border-slate-800 rounded-3xl shadow-xl">
+    <div className="flex flex-wrap items-center justify-between gap-4 p-4 sm:p-5 bg-[#0c1424] border border-slate-800 rounded-2xl shadow-sm">
       <div className="flex items-center gap-3">
         <button
           onClick={onExitAnalysis}
-          className="px-3.5 py-2 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 transition-colors cursor-pointer flex items-center gap-1.5"
+          aria-label="Exit analysis"
+          className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/80 transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
         >
           <ChevronLeft className="w-3.5 h-3.5" />
           <span>Exit</span>
         </button>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <h1 className="text-base font-black font-display text-white">
+          <h1 className="text-base font-bold font-display text-white">
             Stockfish Analysis Board
           </h1>
           {opening && !isVariationActive && (
@@ -83,6 +84,7 @@ export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
               {onReturnToMainline && (
                 <button
                   onClick={onReturnToMainline}
+                  aria-label="Return to mainline"
                   className="ml-1 px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-bold hover:bg-amber-400 transition-colors flex items-center gap-1 cursor-pointer"
                   title="Return to Original Game"
                 >
@@ -106,10 +108,11 @@ export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
         {/* Toggle Best Move Arrow */}
         <button
           onClick={onToggleBestMoveArrow}
+          aria-label={showBestMoveArrow ? 'Disable best move arrow' : 'Enable best move arrow'}
           className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors cursor-pointer ${
             showBestMoveArrow
-              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm'
-              : 'bg-slate-800 hover:bg-slate-750 text-slate-400 border-slate-750'
+              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30 shadow-sm font-bold'
+              : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700/80'
           }`}
           title={showBestMoveArrow ? 'Best Move Arrow: Enabled' : 'Best Move Arrow: Hidden'}
         >
@@ -119,10 +122,11 @@ export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
 
         <button
           onClick={onToggleChessCom}
+          aria-label="Open Chess.com match explorer"
           className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors cursor-pointer ${
             showChessCom
-              ? 'bg-sky-500 text-slate-950 border-sky-400 font-bold'
-              : 'bg-slate-800 hover:bg-slate-750 text-slate-200 border-slate-700'
+              ? 'bg-slate-800 text-sky-400 border-slate-700/80 font-bold shadow-sm'
+              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700/80'
           }`}
         >
           <Globe className="w-3.5 h-3.5 text-sky-400" />
@@ -130,14 +134,16 @@ export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
         </button>
         <button
           onClick={onTogglePgnImport}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-750 text-slate-200 rounded-xl border border-slate-700 transition-colors cursor-pointer"
+          aria-label="Import PGN game"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700/80 transition-colors cursor-pointer shadow-sm"
         >
           <Upload className="w-3.5 h-3.5 text-slate-400" />
           <span>Import</span>
         </button>
         <button
           onClick={onToggleFlip}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-750 text-slate-200 rounded-xl border border-slate-700 transition-colors cursor-pointer"
+          aria-label="Flip chessboard"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700/80 transition-colors cursor-pointer shadow-sm"
           title="Flip Board"
         >
           <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
@@ -145,7 +151,8 @@ export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
         </button>
         <button
           onClick={onCopyPgn}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-750 text-slate-200 rounded-xl border border-slate-700 transition-colors cursor-pointer"
+          aria-label="Copy PGN"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700/80 transition-colors cursor-pointer shadow-sm"
           title="Copy PGN"
         >
           {copiedPgn ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
@@ -153,7 +160,8 @@ export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
         </button>
         <button
           onClick={onCopyFen}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-750 text-slate-200 rounded-xl border border-slate-700 transition-colors cursor-pointer"
+          aria-label="Copy FEN"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700/80 transition-colors cursor-pointer shadow-sm"
           title="Copy FEN"
         >
           {copiedFen ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
@@ -163,4 +171,3 @@ export const AnalysisHeader: React.FC<AnalysisHeaderProps> = ({
     </div>
   );
 };
-
