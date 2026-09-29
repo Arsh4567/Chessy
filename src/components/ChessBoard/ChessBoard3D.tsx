@@ -132,8 +132,10 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
 
   // Demand-driven rendering trigger
   const needsRenderRef = useRef<boolean>(true);
+  const startLoopRef = useRef<(() => void) | null>(null);
   const requestRender = useCallback(() => {
     needsRenderRef.current = true;
+    if (startLoopRef.current) startLoopRef.current();
   }, []);
 
   const theme = BOARD_3D_THEMES[themeId] || BOARD_3D_THEMES.wood;
@@ -214,6 +216,7 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
     // Trigger render when user orbits or zooms
     controls.addEventListener('change', () => {
       needsRenderRef.current = true;
+      if (startLoopRef.current) startLoopRef.current();
     });
 
     // Groups
@@ -234,6 +237,7 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       needsRenderRef.current = true;
+      if (startLoopRef.current) startLoopRef.current();
     };
 
     const resizeObserver = new ResizeObserver(() => {
@@ -243,31 +247,45 @@ export const ChessBoard3D: React.FC<ChessBoard3DProps> = ({
     window.addEventListener('resize', handleResize);
 
     // Animation Loop (Render only when dirty or autoRotate is active)
-    let animationFrameId: number;
+    let animationFrameId: number | null = null;
     let isRunning = true;
+
+    const startLoop = () => {
+      if (!isRunning) return;
+      if (animationFrameId === null) {
+        animationFrameId = requestAnimationFrame(animate);
+      }
+    };
+
+    startLoopRef.current = startLoop;
 
     const animate = () => {
       if (!isRunning) return;
-      animationFrameId = requestAnimationFrame(animate);
 
       let dampingActive = false;
       if (controls) {
-        controls.update();
+        dampingActive = controls.update();
         if (controls.autoRotate) {
           needsRenderRef.current = true;
         }
       }
 
-      if (needsRenderRef.current) {
+      if (needsRenderRef.current || dampingActive) {
         renderer.render(scene, camera);
         needsRenderRef.current = false;
+        animationFrameId = requestAnimationFrame(animate);
+      } else {
+        animationFrameId = null;
       }
     };
-    animate();
+    startLoop();
 
     return () => {
       isRunning = false;
-      cancelAnimationFrame(animationFrameId);
+      startLoopRef.current = null;
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+      }
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
 
