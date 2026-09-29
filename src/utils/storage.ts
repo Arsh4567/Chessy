@@ -74,6 +74,7 @@ export interface UserStats {
 
 export interface UserPreferences {
   boardTheme: 'emerald' | 'wood' | 'midnight' | 'cyber' | 'marble' | 'cobalt';
+  boardDimension?: '2d' | '3d';
   soundEnabled: boolean;
   showCoordinates: boolean;
   showLegalMoves: boolean;
@@ -89,6 +90,7 @@ export interface UserPreferences {
 export function createDefaultPreferences(): UserPreferences {
   return {
     boardTheme: 'emerald',
+    boardDimension: '2d',
     soundEnabled: true,
     showCoordinates: true,
     showLegalMoves: true,

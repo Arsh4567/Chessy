@@ -139,9 +139,9 @@ export const AuthModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
       <div 
-        className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-6 sm:p-8 space-y-6 overflow-hidden"
+        className="relative w-full max-w-md rounded-3xl bg-[#0c1424] border border-slate-800 shadow-2xl p-6 sm:p-8 space-y-6 overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-modal-title"
@@ -150,7 +150,7 @@ export const AuthModal: React.FC = () => {
         <button
           onClick={closeAuthModal}
           disabled={isSubmitting}
-          className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
+          className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-sky-400"
           aria-label="Close authentication modal"
         >
           <X className="w-5 h-5" />
@@ -158,11 +158,11 @@ export const AuthModal: React.FC = () => {
 
         {/* Header */}
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-sky-500 flex items-center justify-center text-2xl text-slate-950 font-black mx-auto shadow-md">
+          <div className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700/80 flex items-center justify-center text-xl text-sky-400 font-black mx-auto shadow-sm">
             ♚
           </div>
-          <h2 id="auth-modal-title" className="text-2xl font-bold font-display text-white">
-            {mode === 'login' ? 'Welcome Back' : mode === 'signup' ? 'Join Grandmaster' : 'Reset Password'}
+          <h2 id="auth-modal-title" className="text-xl sm:text-2xl font-bold font-display text-white">
+            {mode === 'login' ? 'Welcome Back' : mode === 'signup' ? 'Join Chessy' : 'Reset Password'}
           </h2>
           <p className="text-xs text-slate-400">
             {isAnonymous && mode === 'signup'
@@ -181,9 +181,9 @@ export const AuthModal: React.FC = () => {
             <button
               type="button"
               onClick={() => { setMode('login'); setErrorMsg(null); }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                 mode === 'login'
-                  ? 'bg-slate-800 text-white font-bold shadow-sm'
+                  ? 'bg-slate-800 text-sky-400 shadow-sm border border-slate-700/80'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -192,9 +192,9 @@ export const AuthModal: React.FC = () => {
             <button
               type="button"
               onClick={() => { setMode('signup'); setErrorMsg(null); }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                 mode === 'signup'
-                  ? 'bg-slate-800 text-white font-bold shadow-sm'
+                  ? 'bg-slate-800 text-sky-400 shadow-sm border border-slate-700/80'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >

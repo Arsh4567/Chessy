@@ -392,17 +392,17 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-in fade-in duration-200">
       {/* Top Header & Mode Navigation Bar */}
-      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-[#0c1424] border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400 text-2xl shadow-inner shrink-0">
+          <div className="w-11 h-11 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 text-2xl shadow-inner shrink-0">
             ⚡
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-black font-display text-white">
+              <h1 className="text-xl sm:text-2xl font-bold font-display text-white">
                 Tactical Arena & Puzzles
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-400 font-bold hidden sm:inline-block">
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-400 font-bold hidden sm:inline-block">
                 Lichess Integrated
               </span>
             </div>
@@ -413,26 +413,26 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
         </div>
 
         {/* Rating & Streak Banner */}
-        <div className="flex items-center gap-3 bg-slate-950 px-4 py-2 rounded-2xl border border-slate-800 shadow-inner w-full sm:w-auto justify-between sm:justify-start">
+        <div className="flex items-center gap-3 bg-slate-900/90 px-4 py-2 rounded-xl border border-slate-800 shadow-sm w-full sm:w-auto justify-between sm:justify-start">
           <div className="text-center px-2">
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Puzzle Rating</span>
-            <span className="text-lg font-mono font-black text-amber-400">{puzzleRating}</span>
+            <span className="text-[10px] text-slate-400 uppercase font-semibold tracking-wider block">Rating</span>
+            <span className="text-base font-mono font-bold text-amber-400 tabular-nums">{puzzleRating}</span>
           </div>
           <div className="text-center border-l border-slate-800 pl-4 pr-2">
-            <span className="text-[10px] text-emerald-400 uppercase font-bold tracking-wider block">Streak</span>
-            <span className="text-lg font-mono font-bold text-emerald-400">🔥 {streak}</span>
+            <span className="text-[10px] text-emerald-400 uppercase font-semibold tracking-wider block">Streak</span>
+            <span className="text-base font-mono font-bold text-emerald-400 tabular-nums">🔥 {streak}</span>
           </div>
           {activeMode === 'rush' && (
             <div className="text-center border-l border-slate-800 pl-4 pr-2">
-              <span className="text-[10px] text-sky-400 uppercase font-bold tracking-wider block">Best Rush</span>
-              <span className="text-lg font-mono font-black text-sky-400">🏆 {rushHighScore}</span>
+              <span className="text-[10px] text-sky-400 uppercase font-semibold tracking-wider block">Best Rush</span>
+              <span className="text-base font-mono font-bold text-sky-400 tabular-nums">🏆 {rushHighScore}</span>
             </div>
           )}
         </div>
       </div>
 
       {/* Mode Selector Tabs & Importer Action */}
-      <div className="flex flex-wrap items-center justify-between gap-2 p-1.5 bg-slate-900/60 border border-slate-800 rounded-2xl">
+      <div className="flex flex-wrap items-center justify-between gap-2 p-1.5 bg-[#0c1424] border border-slate-800 rounded-2xl shadow-sm">
         <div className="flex flex-wrap items-center gap-1.5">
           {[
             { id: 'rated' as PuzzleMode, label: 'Rated Trainer', icon: Zap, desc: 'Adaptive ELO progression' },
@@ -447,13 +447,13 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveMode(tab.id)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-amber-500 text-slate-950 shadow-md scale-[1.02]'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/80'
+                    ? 'bg-slate-800 text-sky-400 border border-slate-700/80 font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
               </button>
             );
@@ -464,20 +464,20 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
           {/* Random Lichess Puzzle Button */}
           <button
             onClick={handleFetchRandomLichess}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs font-bold transition-all cursor-pointer shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-amber-300 text-xs font-semibold transition-all cursor-pointer shadow-sm"
             title="Fetch a random puzzle from Lichess matching your rating"
           >
-            <Dices className="w-4 h-4 text-amber-400" />
-            <span>Random Lichess</span>
+            <Dices className="w-3.5 h-3.5 text-amber-400" />
+            <span>Random</span>
           </button>
 
           {/* Import from Lichess Button */}
           <button
             onClick={() => setShowImportModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-sky-500/20 border border-slate-700 hover:border-sky-500/40 text-slate-200 hover:text-sky-300 text-xs font-bold transition-all cursor-pointer shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-sky-300 text-xs font-semibold transition-all cursor-pointer shadow-sm"
             title="Import Puzzles directly from Lichess by ID, Player, or CSV"
           >
-            <Download className="w-4 h-4 text-sky-400" />
+            <Download className="w-3.5 h-3.5 text-sky-400" />
             <span>Import</span>
           </button>
         </div>
@@ -672,7 +672,7 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
         {/* Right: Tactics HUD & Solution Console */}
         <div className="lg:col-span-5 flex flex-col gap-4 w-full max-w-[min(94vw,470px,68vh)] lg:max-w-none mx-auto">
           {/* Active Puzzle Info Card */}
-          <div className="p-5 bg-slate-900/90 border border-slate-800 rounded-3xl shadow-xl space-y-4">
+          <div className="p-5 bg-[#0c1424] border border-slate-800 rounded-2xl shadow-sm space-y-4">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <div className="flex items-center gap-1.5 flex-wrap">

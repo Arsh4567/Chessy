@@ -5,77 +5,108 @@
     --font-display: 'Cinzel', serif;
     --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
+
+    /* Chessy Design System Color Tokens */
+    --chessy-bg: #070c14;
+    --chessy-surface: #0c1424;
+    --chessy-surface-hover: #111b30;
+    --chessy-border: #1e293b;
+    --chessy-border-subtle: rgba(255, 255, 255, 0.08);
+    --chessy-primary: #38bdf8;
+    --chessy-primary-hover: #0284c7;
+    --chessy-accent: #6366f1;
+    --chessy-success: #10b981;
+    --chessy-danger: #f43f5e;
+    --chessy-warning: #f59e0b;
+    --chessy-text: #f8fafc;
+    --chessy-text-muted: #94a3b8;
   }
 
   html, body, #root {
     max-width: 100vw;
     overflow-x: hidden;
+    min-height: 100vh;
   }
 
   body {
     font-family: var(--font-body);
-    background-color: #020617;
+    background-color: var(--chessy-bg);
+    color: var(--chessy-text);
   }
 
   h1, h2, h3, .font-display {
     font-family: var(--font-display);
+    letter-spacing: -0.01em;
   }
 
   .font-mono, .tabular-nums {
     font-family: var(--font-mono);
   }
+
+  /* Global Keyboard Accessibility Outline */
+  :focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+  }
+
+  button:focus-visible, a:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+  }
 }
 
-/* Custom Chess Board Patterns & Colors */
+/* ======================================================== */
+/* Chess Board Themes - Calibrated for high contrast & piece visibility */
+/* ======================================================== */
 .board-theme-cobalt {
-  --sq-light: #c8d7e6;
-  --sq-dark: #1e3650;
-  --sq-highlight: #38bdf8;
-  --sq-move: rgba(56, 189, 248, 0.45);
-  --sq-check: rgba(239, 68, 68, 0.85);
+  --sq-light: #d8e2dc;
+  --sq-dark: #223843;
+  --sq-highlight: rgba(56, 189, 248, 0.55);
+  --sq-move: rgba(56, 189, 248, 0.38);
+  --sq-check: rgba(239, 68, 68, 0.82);
 }
 
 .board-theme-emerald {
   --sq-light: #eeeed2;
   --sq-dark: #769656;
-  --sq-highlight: #baca44;
-  --sq-move: rgba(20, 85, 30, 0.5);
-  --sq-check: rgba(220, 38, 38, 0.7);
+  --sq-highlight: rgba(186, 202, 68, 0.55);
+  --sq-move: rgba(186, 202, 68, 0.38);
+  --sq-check: rgba(220, 38, 38, 0.82);
 }
 
 .board-theme-wood {
   --sq-light: #f0d9b5;
   --sq-dark: #b58863;
-  --sq-highlight: #ced26b;
-  --sq-move: rgba(181, 136, 99, 0.6);
-  --sq-check: rgba(239, 68, 68, 0.75);
+  --sq-highlight: rgba(212, 163, 115, 0.60);
+  --sq-move: rgba(212, 163, 115, 0.40);
+  --sq-check: rgba(239, 68, 68, 0.82);
 }
 
 .board-theme-midnight {
   --sq-light: #e2e8f0;
   --sq-dark: #334155;
-  --sq-highlight: #38bdf8;
-  --sq-move: rgba(56, 189, 248, 0.4);
-  --sq-check: rgba(244, 63, 94, 0.8);
+  --sq-highlight: rgba(56, 189, 248, 0.50);
+  --sq-move: rgba(56, 189, 248, 0.35);
+  --sq-check: rgba(244, 63, 94, 0.82);
 }
 
 .board-theme-cyber {
-  --sq-light: #1e293b;
-  --sq-dark: #0f172a;
-  --sq-highlight: #10b981;
-  --sq-move: rgba(16, 185, 129, 0.4);
-  --sq-check: rgba(239, 68, 68, 0.8);
+  --sq-light: #3e5270;
+  --sq-dark: #182338;
+  --sq-highlight: rgba(16, 185, 129, 0.55);
+  --sq-move: rgba(16, 185, 129, 0.38);
+  --sq-check: rgba(239, 68, 68, 0.82);
 }
 
 .board-theme-marble {
-  --sq-light: #f8fafc;
-  --sq-dark: #94a3b8;
-  --sq-highlight: #fbbf24;
-  --sq-move: rgba(251, 191, 36, 0.5);
-  --sq-check: rgba(225, 29, 72, 0.75);
+  --sq-light: #f1f5f9;
+  --sq-dark: #64748b;
+  --sq-highlight: rgba(234, 179, 8, 0.50);
+  --sq-move: rgba(234, 179, 8, 0.35);
+  --sq-check: rgba(225, 29, 72, 0.82);
 }
 
-/* Custom smooth scroll and transitions */
+/* Custom smooth scroll and scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -84,14 +115,14 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.2);
-  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.4);
+  background: rgba(148, 163, 184, 0.45);
 }
 
-/* Buttery-Smooth Hardware-Accelerated Piece Slide */
+/* Hardware-Accelerated Fast Piece Movement */
 @keyframes chessPieceSlide {
   from {
     transform: translate3d(var(--slide-x, 0), var(--slide-y, 0), 0);
@@ -102,7 +133,7 @@
 }
 
 .animate-piece-slide {
-  animation: chessPieceSlide 200ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: chessPieceSlide 180ms cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
   will-change: transform;
   backface-visibility: hidden;
   transform: translateZ(0);
@@ -110,7 +141,7 @@
 
 @keyframes captureFlash {
   0% {
-    box-shadow: inset 0 0 0 3px rgba(245, 158, 11, 0.8), 0 0 16px rgba(245, 158, 11, 0.4);
+    box-shadow: inset 0 0 0 3px rgba(245, 158, 11, 0.8), 0 0 12px rgba(245, 158, 11, 0.3);
   }
   100% {
     box-shadow: inset 0 0 0 0 rgba(245, 158, 11, 0), 0 0 0 rgba(245, 158, 11, 0);
@@ -118,20 +149,15 @@
 }
 
 .animate-capture-flash {
-  animation: captureFlash 260ms ease-out forwards;
+  animation: captureFlash 220ms ease-out forwards;
 }
 
-@keyframes floatSlow {
-  0%, 100% {
-    transform: translateY(0px) rotate(0deg);
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
-  50% {
-    transform: translateY(-12px) rotate(0.5deg);
-  }
 }
-
-.animate-float {
-  animation: floatSlow 6s ease-in-out infinite;
-  will-change: transform;
-}
-

@@ -62,7 +62,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-in fade-in duration-300 pb-20 md:pb-10">
       {/* Top Header */}
-      <div className="p-6 sm:p-8 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="p-6 sm:p-8 rounded-2xl bg-[#0c1424] border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-sm">
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 text-xs font-semibold text-amber-400">
             <Trophy className="w-4 h-4" />
@@ -71,32 +71,32 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
           <h1 className="text-2xl sm:text-3xl font-bold font-display text-white">
             Leaderboard & Tiers
           </h1>
-          <p className="text-sm text-slate-400 max-w-xl">
+          <p className="text-xs sm:text-sm text-slate-400 max-w-xl leading-relaxed">
             Climb the live Firebase multiplayer competitive ladder, conquer tactical puzzle tiers, or challenge tuned Stockfish bots.
           </p>
         </div>
 
         {/* User Rank Dual Card */}
         <div className="flex items-center gap-3">
-          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 shrink-0 flex items-center gap-3">
-            <div className="w-11 h-11 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-xl font-bold">
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-900/80 border border-slate-800 shrink-0 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-lg font-bold">
               {currentTier.icon}
             </div>
             <div>
               <div className="text-xs text-slate-400 font-medium">Multiplayer Elo</div>
-              <div className="text-lg font-bold font-mono text-white mt-0.5">
+              <div className="text-base sm:text-lg font-bold font-mono text-white mt-0.5 tabular-nums">
                 {mpRating} <span className="text-xs text-amber-400 font-normal">Elo</span>
               </div>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 shrink-0 flex items-center gap-3">
-            <div className="w-11 h-11 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-xl font-bold text-sky-400">
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-900/80 border border-slate-800 shrink-0 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-sky-500/10 border border-sky-400/20 flex items-center justify-center text-lg font-bold text-sky-400">
               ⚡
             </div>
             <div>
               <div className="text-xs text-slate-400 font-medium">Tactics Rating</div>
-              <div className="text-lg font-bold font-mono text-white mt-0.5">
+              <div className="text-base sm:text-lg font-bold font-mono text-white mt-0.5 tabular-nums">
                 {stats.puzzleRating} <span className="text-xs text-sky-400 font-normal">Elo</span>
               </div>
             </div>
@@ -108,9 +108,9 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
       <div className="flex items-center gap-2 border-b border-slate-800 pb-3 overflow-x-auto">
         <button
           onClick={() => setActiveTab('multiplayer')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
             activeTab === 'multiplayer'
-              ? 'bg-sky-500 text-slate-950 font-bold'
+              ? 'bg-slate-800 text-sky-400 border border-slate-700/80 shadow-sm'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
           }`}
         >
@@ -120,9 +120,9 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
 
         <button
           onClick={() => setActiveTab('bots')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
             activeTab === 'bots'
-              ? 'bg-sky-500 text-slate-950 font-bold'
+              ? 'bg-slate-800 text-sky-400 border border-slate-700/80 shadow-sm'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
           }`}
         >
@@ -132,9 +132,9 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
 
         <button
           onClick={() => setActiveTab('puzzles')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
             activeTab === 'puzzles'
-              ? 'bg-sky-500 text-slate-950 font-bold'
+              ? 'bg-slate-800 text-sky-400 border border-slate-700/80 shadow-sm'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
           }`}
         >
@@ -147,27 +147,27 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
       {activeTab === 'multiplayer' ? (
         <div className="space-y-6">
           {/* Real-time Firebase Leaderboard Table */}
-          <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="p-6 rounded-2xl bg-[#0c1424] border border-slate-800/90 space-y-4 shadow-sm">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
               <div className="flex items-center gap-2 text-white font-bold text-sm">
                 <Cloud className="w-4 h-4 text-emerald-400" />
                 <span>Live Multiplayer Leaderboard</span>
               </div>
-              <span className="text-xs font-mono text-slate-400">
+              <span className="text-xs font-mono text-slate-400 tabular-nums">
                 {leaderboardList.length} Players
               </span>
             </div>
 
             {isLoadingLb ? (
-              <div className="py-8 text-center text-slate-400 text-xs font-mono flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
-                Loading Leaderboard from Firebase...
+              <div className="py-12 text-center text-slate-400 text-xs font-mono flex flex-col items-center justify-center gap-3">
+                <span className="w-5 h-5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+                <span>Synchronizing leaderboard standings...</span>
               </div>
             ) : leaderboardList.length === 0 ? (
-              <div className="py-8 text-center space-y-1">
-                <div className="text-slate-300 text-sm">No players recorded yet on this leaderboard.</div>
-                <div className="text-xs text-slate-400 font-mono">
-                  Play your first online match or sign in to establish your rank.
+              <div className="py-12 text-center space-y-2">
+                <div className="text-slate-200 text-sm font-semibold">No competitive players recorded yet.</div>
+                <div className="text-xs text-slate-400 font-mono max-w-sm mx-auto">
+                  Play your first ranked online match or sign in with an account to establish your rating.
                 </div>
               </div>
             ) : (
@@ -175,12 +175,12 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b border-slate-800 text-slate-400 font-mono text-xs">
-                      <th className="py-2.5 px-3">Rank</th>
-                      <th className="py-2.5 px-3">Player</th>
-                      <th className="py-2.5 px-3">Tier</th>
-                      <th className="py-2.5 px-3 text-right">Rating</th>
-                      <th className="py-2.5 px-3 text-right">Matches</th>
-                      <th className="py-2.5 px-3 text-right">Record (W-L-D)</th>
+                      <th className="py-3 px-4 font-semibold">Rank</th>
+                      <th className="py-3 px-4 font-semibold">Player</th>
+                      <th className="py-3 px-4 font-semibold">Tier</th>
+                      <th className="py-3 px-4 text-right font-semibold">Rating</th>
+                      <th className="py-3 px-4 text-right font-semibold">Matches</th>
+                      <th className="py-3 px-4 text-right font-semibold">Record (W-L-D)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 font-medium">
@@ -190,59 +190,61 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                       return (
                         <tr
                           key={entry.userId}
-                          className={`hover:bg-slate-800/40 transition-colors ${
-                            isMe ? 'bg-sky-500/10 text-white font-bold' : 'text-slate-300'
+                          className={`transition-colors ${
+                            isMe 
+                              ? 'bg-sky-500/10 hover:bg-sky-500/15 text-white font-bold' 
+                              : 'text-slate-300 hover:bg-slate-800/40'
                           }`}
                         >
-                          <td className="py-3 px-3 font-mono font-bold">
+                          <td className="py-3.5 px-4 font-mono font-bold">
                             {idx === 0 ? (
-                              <span className="text-amber-400 flex items-center gap-1">
-                                <Crown className="w-3.5 h-3.5 fill-amber-400" /> #1
+                              <span className="text-amber-400 flex items-center gap-1.5 font-bold">
+                                <Crown className="w-4 h-4 fill-amber-400 shrink-0" /> #1
                               </span>
                             ) : idx === 1 ? (
-                              <span className="text-slate-300 flex items-center gap-1">
-                                <Medal className="w-3.5 h-3.5 text-slate-300" /> #2
+                              <span className="text-slate-300 flex items-center gap-1.5 font-bold">
+                                <Medal className="w-4 h-4 text-slate-300 shrink-0" /> #2
                               </span>
                             ) : idx === 2 ? (
-                              <span className="text-amber-600 flex items-center gap-1">
-                                <Medal className="w-3.5 h-3.5 text-amber-600" /> #3
+                              <span className="text-amber-600 flex items-center gap-1.5 font-bold">
+                                <Medal className="w-4 h-4 text-amber-600 shrink-0" /> #3
                               </span>
                             ) : (
-                              <span>#{idx + 1}</span>
+                              <span className="text-slate-400">#{idx + 1}</span>
                             )}
                           </td>
-                          <td className="py-3 px-3">
-                            <div className="flex items-center gap-2">
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-2.5">
                               {entry.photoURL ? (
-                                <img src={entry.photoURL} alt="" className="w-5 h-5 rounded-full" />
+                                <img src={entry.photoURL} alt="" className="w-7 h-7 rounded-full object-cover ring-1 ring-slate-700 shrink-0" />
                               ) : (
-                                <div className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-300">
+                                <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-sky-400 shrink-0">
                                   {entry.displayName?.charAt(0) || 'P'}
                                 </div>
                               )}
-                              <span>{entry.displayName}</span>
+                              <span className="truncate max-w-[140px] sm:max-w-xs">{entry.displayName}</span>
                               {isMe && (
-                                <span className="text-xs text-sky-400 font-bold">
-                                  (You)
+                                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 font-bold border border-sky-500/30">
+                                  You
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="py-3 px-3">
-                            <span className="flex items-center gap-1">
+                          <td className="py-3.5 px-4">
+                            <span className="inline-flex items-center gap-1.5">
                               <span>{tier.icon}</span>
-                              <span className="text-xs text-slate-400">{tier.name}</span>
+                              <span className="text-xs text-slate-300 font-medium">{tier.name}</span>
                             </span>
                           </td>
-                          <td className="py-3 px-3 text-right font-mono font-bold text-amber-400">
-                            {entry.multiplayerRating} <span className="text-xs text-slate-400 font-normal">Elo</span>
+                          <td className="py-3.5 px-4 text-right font-mono font-bold text-amber-400 tabular-nums">
+                            {entry.multiplayerRating} <span className="text-[11px] text-slate-400 font-normal">Elo</span>
                           </td>
-                          <td className="py-3 px-3 text-right font-mono text-slate-400">
+                          <td className="py-3.5 px-4 text-right font-mono text-slate-300 tabular-nums">
                             {entry.multiplayerGamesPlayed}
                           </td>
-                          <td className="py-3 px-3 text-right font-mono text-slate-400">
-                            <span className="text-emerald-400">{entry.multiplayerWins}</span>-
-                            <span className="text-rose-400">{entry.multiplayerLosses}</span>-
+                          <td className="py-3.5 px-4 text-right font-mono text-slate-400 tabular-nums">
+                            <span className="text-emerald-400 font-semibold">{entry.multiplayerWins}</span>-
+                            <span className="text-rose-400 font-semibold">{entry.multiplayerLosses}</span>-
                             <span className="text-slate-400">{entry.multiplayerDraws}</span>
                           </td>
                         </tr>

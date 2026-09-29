@@ -85,7 +85,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6 animate-in fade-in duration-300 pb-20 md:pb-10">
       {/* Hero Header */}
-      <div className="p-6 sm:p-8 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
+      <div className="p-6 sm:p-8 rounded-2xl bg-[#0c1424] border border-slate-800 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 text-xs font-semibold text-sky-400">
             <Users className="w-4 h-4" />
@@ -94,18 +94,18 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           <h1 className="text-2xl sm:text-3xl font-bold font-display text-white">
             Play with Friends Online
           </h1>
-          <p className="text-sm text-slate-400 max-w-lg">
+          <p className="text-sm text-slate-400 max-w-lg leading-relaxed">
             Create a live match room, share the invite link with a friend, and play with server-synchronized clocks and advance Elo rating tracking.
           </p>
         </div>
 
-        <div className="w-14 h-14 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-3xl shrink-0 text-sky-400">
+        <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-3xl shrink-0 text-sky-400">
           ⚔️
         </div>
       </div>
 
       {/* Advance Elo Rating & Placement Progression Card */}
-      <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
+      <div className="p-6 rounded-2xl bg-[#0c1424] border border-slate-800 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-2xl shrink-0">
@@ -186,7 +186,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
       </div>
 
       {/* Player Handle Bar */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="p-5 rounded-2xl bg-[#0c1424] border border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-0.5">
           <label className="text-xs font-semibold text-slate-200">Your Player Name</label>
           <p className="text-xs text-slate-400">Display name shown during match and in room chat</p>
@@ -198,14 +198,14 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           onChange={(e) => handleNameChange(e.target.value)}
           placeholder="Your name..."
           maxLength={24}
-          className="w-full sm:w-64 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold text-white focus:outline-none focus:border-sky-400 transition-colors"
+          className="w-full sm:w-64 bg-slate-900/90 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs font-semibold text-white focus:outline-none focus:border-sky-400 transition-colors"
         />
       </div>
 
       {/* Main Grid: Create Match vs Join Match */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
         {/* Create Match Card (7 cols) */}
-        <div className="md:col-span-7 p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-6">
+        <div className="md:col-span-7 p-6 rounded-2xl bg-[#0c1424] border border-slate-800 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h2 className="text-base font-bold text-white flex items-center gap-2">
               <Users className="w-4 h-4 text-sky-400" />
@@ -229,12 +229,12 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                     onClick={() => setSelectedTimeControl(tc)}
                     className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-sky-500 text-slate-950 border-sky-400 font-bold shadow-sm'
-                        : 'bg-slate-950/60 hover:bg-slate-800 text-slate-300 border-slate-800'
+                        ? 'bg-slate-800 text-sky-400 border-slate-700 font-bold shadow-sm ring-1 ring-sky-500/30'
+                        : 'bg-slate-900/60 hover:bg-slate-800/60 text-slate-300 border-slate-800'
                     }`}
                   >
                     <div className="text-xs font-bold">{tc.name.split('•')[0].trim()}</div>
-                    <div className="text-xs font-mono opacity-80 mt-0.5">{tc.name.split('•')[1]?.trim() || ''}</div>
+                    <div className="text-[11px] font-mono opacity-80 mt-0.5">{tc.name.split('•')[1]?.trim() || ''}</div>
                   </button>
                 );
               })}
@@ -260,8 +260,8 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                     onClick={() => setSelectedColor(side.id)}
                     className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
                       isSelected
-                        ? 'bg-slate-800 border-sky-400 text-white font-bold'
-                        : 'bg-slate-950/60 hover:bg-slate-800 text-slate-400 border-slate-800'
+                        ? 'bg-slate-800 border-sky-400 text-white font-bold ring-1 ring-sky-500/30'
+                        : 'bg-slate-900/60 hover:bg-slate-800/60 text-slate-400 border-slate-800'
                     }`}
                   >
                     <span className="text-lg">{side.icon}</span>
@@ -275,16 +275,16 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           {/* Launch Room Button */}
           <button
             onClick={handleCreateRoom}
-            className="w-full py-3.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md shadow-sky-500/20 active:scale-95"
+            className="w-full py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm active:scale-[0.99]"
           >
-            <Play className="w-4 h-4 fill-slate-950" />
+            <Play className="w-3.5 h-3.5 fill-slate-950" />
             <span>Create Match & Share Link</span>
           </button>
         </div>
 
         {/* Join Match Card (5 cols) */}
         <div className="md:col-span-5 space-y-4">
-          <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
+          <div className="p-6 rounded-2xl bg-[#0c1424] border border-slate-800 shadow-sm space-y-4">
             <div className="border-b border-slate-800 pb-3">
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <Key className="w-4 h-4 text-amber-400" />
@@ -302,14 +302,14 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                   value={roomCodeInput}
                   onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
                   placeholder="e.g. GM-4921-8201-9281"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold tracking-wider text-center text-sky-400 placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors uppercase"
+                  className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs font-mono font-bold tracking-wider text-center text-sky-400 placeholder-slate-600 focus:outline-none focus:border-sky-400 transition-colors uppercase"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={!roomCodeInput.trim()}
-                className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border border-slate-700"
+                className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border border-slate-700/80 shadow-sm"
               >
                 Join Match Room
               </button>
@@ -318,14 +318,14 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
 
           {/* Local Pass & Play Switcher */}
           {onSwitchToLocalPassAndPlay && (
-            <div className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-3">
+            <div className="p-4 rounded-2xl bg-[#0c1424] border border-slate-800 shadow-sm flex items-center justify-between gap-3">
               <div className="space-y-0.5">
                 <span className="text-xs font-semibold text-slate-200 block">Playing on Same Screen?</span>
-                <span className="text-xs text-slate-400 block">Use Pass & Play with auto board flipping</span>
+                <span className="text-[11px] text-slate-400 block">Use Pass & Play with auto board flipping</span>
               </div>
               <button
                 onClick={onSwitchToLocalPassAndPlay}
-                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs font-semibold transition-colors cursor-pointer shrink-0"
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs font-semibold transition-colors cursor-pointer shrink-0 border border-slate-700/80 shadow-sm"
               >
                 Pass & Play
               </button>

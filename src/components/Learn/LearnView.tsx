@@ -8,6 +8,7 @@ import { LichessData, fetchLichessData } from '../../utils/lichessExplorer';
 import { stockfish, StockfishEvaluation } from '../../utils/stockfishWorker';
 import { OpeningExplorer } from './OpeningExplorer';
 import { RepertoireTrainer } from './Repertoire/RepertoireTrainer';
+import { BeginnerAcademy } from './BeginnerAcademy';
 import { 
   BookOpen, 
   Search, 
@@ -16,7 +17,8 @@ import {
   ChevronRight, 
   Cpu,
   Bookmark,
-  ArrowRight
+  ArrowRight,
+  GraduationCap
 } from 'lucide-react';
 
 interface LearnViewProps {
@@ -28,7 +30,7 @@ export const LearnView: React.FC<LearnViewProps> = ({
   onStartGameWithOpening,
   onAnalyzeOpening,
 }) => {
-  const [activeLearnTab, setActiveLearnTab] = useState<'repertoire' | 'explorer' | 'encyclopedia'>('repertoire');
+  const [activeLearnTab, setActiveLearnTab] = useState<'academy' | 'repertoire' | 'explorer' | 'encyclopedia'>('academy');
   const [explorerInitialFen, setExplorerInitialFen] = useState<string | undefined>(undefined);
 
   // Encyclopedia states
@@ -155,49 +157,66 @@ export const LearnView: React.FC<LearnViewProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-in fade-in duration-300 pb-20 md:pb-10">
       {/* Top Mode Segmented Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-2 rounded-2xl bg-slate-900/60 border border-slate-800">
-        <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-950/60 border border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-2 rounded-2xl bg-[#0c1424] border border-slate-800 shadow-sm">
+        <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-950/80 border border-slate-800/80">
           <button
-            onClick={() => setActiveLearnTab('repertoire')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
-              activeLearnTab === 'repertoire'
-                ? 'bg-amber-500 text-slate-950 font-bold'
-                : 'text-slate-400 hover:text-white'
+            onClick={() => setActiveLearnTab('academy')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+              activeLearnTab === 'academy'
+                ? 'bg-slate-800 text-sky-400 border border-slate-700/80 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Bookmark className="w-4 h-4" />
+            <GraduationCap className="w-3.5 h-3.5" />
+            <span>Beginner Academy</span>
+          </button>
+
+          <button
+            onClick={() => setActiveLearnTab('repertoire')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+              activeLearnTab === 'repertoire'
+                ? 'bg-slate-800 text-sky-400 border border-slate-700/80 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Bookmark className="w-3.5 h-3.5" />
             <span>Repertoire & Spaced Repetition</span>
           </button>
 
           <button
             onClick={() => setActiveLearnTab('explorer')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
               activeLearnTab === 'explorer'
-                ? 'bg-sky-500 text-slate-950 font-bold'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-slate-800 text-sky-400 border border-slate-700/80 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Compass className="w-4 h-4" />
+            <Compass className="w-3.5 h-3.5" />
             <span>Interactive Explorer</span>
           </button>
 
           <button
             onClick={() => setActiveLearnTab('encyclopedia')}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
               activeLearnTab === 'encyclopedia'
-                ? 'bg-sky-500 text-slate-950 font-bold'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-slate-800 text-sky-400 border border-slate-700/80 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <BookOpen className="w-4 h-4" />
+            <BookOpen className="w-3.5 h-3.5" />
             <span>Theory Encyclopedia ({OPENINGS_DATABASE.length})</span>
           </button>
         </div>
 
-        <div className="text-xs text-slate-400 px-3 hidden md:block">
-          <span>SM-2 Memory Spaced Repetition</span>
+        <div className="text-xs text-slate-400 px-3 hidden md:block font-mono">
+          <span>{activeLearnTab === 'academy' ? 'Zero to Hero Interactive Drills' : 'SM-2 Memory Spaced Repetition'}</span>
         </div>
       </div>
+
+      {/* Tab 0: Beginner Academy */}
+      {activeLearnTab === 'academy' && (
+        <BeginnerAcademy />
+      )}
 
       {/* Tab 1: Repertoire & Spaced Repetition Trainer */}
       {activeLearnTab === 'repertoire' && (
@@ -217,7 +236,7 @@ export const LearnView: React.FC<LearnViewProps> = ({
       {activeLearnTab === 'encyclopedia' && (
         <div className="space-y-6">
           {/* Encyclopedia Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-slate-900/60 border border-slate-800">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-[#0c1424] border border-slate-800 shadow-sm">
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-400">
                 <BookOpen className="w-4 h-4" />
@@ -226,7 +245,7 @@ export const LearnView: React.FC<LearnViewProps> = ({
               <h1 className="text-2xl sm:text-3xl font-bold font-display text-white">
                 Opening Theory & Variations
               </h1>
-              <p className="text-xs sm:text-sm text-slate-400 max-w-2xl">
+              <p className="text-xs sm:text-sm text-slate-400 max-w-2xl leading-relaxed">
                 Explore fundamental opening concepts, key strategic plans, and win rate distributions derived from over 2,000,000 FIDE Master games.
               </p>
             </div>
@@ -234,7 +253,7 @@ export const LearnView: React.FC<LearnViewProps> = ({
             <div className="flex items-center gap-2.5">
               <button
                 onClick={() => handleOpenInExplorer(selectedOpening)}
-                className="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
               >
                 <Compass className="w-3.5 h-3.5" />
                 <span>Explore Tree</span>
@@ -243,7 +262,7 @@ export const LearnView: React.FC<LearnViewProps> = ({
               {onAnalyzeOpening && (
                 <button
                   onClick={() => onAnalyzeOpening(chess.fen())}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 border border-slate-700"
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1.5 border border-slate-700/80"
                 >
                   <Cpu className="w-3.5 h-3.5 text-sky-400" />
                   <span>Analyze Position</span>
@@ -256,7 +275,7 @@ export const LearnView: React.FC<LearnViewProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             {/* Left Board & Stats Panel */}
             <div className="lg:col-span-7 space-y-4">
-              <div className="p-4 sm:p-6 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col items-center space-y-4">
+              <div className="p-4 sm:p-6 rounded-2xl bg-[#0c1424] border border-slate-800 flex flex-col items-center space-y-4 shadow-sm">
                 {/* Opening Title & ECO Header */}
                 <div className="w-full flex items-center justify-between border-b border-slate-800 pb-3">
                   <div className="flex items-center gap-2 min-w-0">
@@ -331,7 +350,7 @@ export const LearnView: React.FC<LearnViewProps> = ({
 
             {/* Right Opening Library & Category Filter */}
             <div className="lg:col-span-5 space-y-4">
-              <div className="p-4 sm:p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-4">
+              <div className="p-4 sm:p-6 rounded-2xl bg-[#0c1424] border border-slate-800 space-y-4 shadow-sm">
                 <div className="flex items-center justify-between">
                   <h2 className="text-base font-bold text-white font-display flex items-center gap-2">
                     <BookOpen className="w-4 h-4 text-sky-400" />
@@ -347,7 +366,7 @@ export const LearnView: React.FC<LearnViewProps> = ({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search openings (e.g. Sicilian, Caro-Kann, B90)..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400 transition-colors font-sans"
+                    className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-400 transition-colors font-sans"
                   />
                 </div>
 
@@ -366,8 +385,8 @@ export const LearnView: React.FC<LearnViewProps> = ({
                       onClick={() => setActiveCategory(cat.id as any)}
                       className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                         activeCategory === cat.id
-                          ? 'bg-sky-500 text-slate-950 shadow-sm'
-                          : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-750'
+                          ? 'bg-slate-800 text-sky-400 border border-slate-700 font-bold shadow-sm'
+                          : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800'
                       }`}
                     >
                       {cat.label}
@@ -377,11 +396,11 @@ export const LearnView: React.FC<LearnViewProps> = ({
 
                 {/* Openings Scroll List */}
                 <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
-                  {filteredOpenings.map((op) => {
-                    const isSelected = selectedOpening.eco === op.eco && selectedOpening.name === op.name;
+                  {filteredOpenings.map((op, idx) => {
+                    const isSelected = selectedOpening.eco === op.eco && selectedOpening.name === op.name && selectedOpening.moves === op.moves;
                     return (
                       <div
-                        key={`${op.eco}_${op.name}`}
+                        key={`${op.eco}_${op.name}_${op.moves || 'root'}_${idx}`}
                         onClick={() => handleSelectOpening(op)}
                         className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 group ${
                           isSelected

@@ -13,7 +13,7 @@ export const ReportOpeningsTables: React.FC<ReportOpeningsTablesProps> = ({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {/* 2. White Openings */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl space-y-0">
+      <div className="bg-[#0c1424] border border-slate-800 rounded-2xl overflow-hidden shadow-sm space-y-0">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-base">♔</span>
@@ -68,7 +68,7 @@ export const ReportOpeningsTables: React.FC<ReportOpeningsTablesProps> = ({
       </div>
 
       {/* 3. Black Openings */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl space-y-0">
+      <div className="bg-[#0c1424] border border-slate-800 rounded-2xl overflow-hidden shadow-sm space-y-0">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-base">♚</span>

@@ -72,24 +72,24 @@ export const GlowingChessCenterpiece: React.FC<GlowingChessCenterpieceProps> = (
       onMouseMove={handleMouseMove}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      className="relative w-full max-w-[340px] rounded-2xl p-5 overflow-hidden bg-slate-900/60 border border-slate-800 shadow-xl transition-all duration-300 flex flex-col items-center justify-between min-h-[280px]"
+      className="relative w-full max-w-[340px] rounded-2xl p-5 overflow-hidden bg-[#0c1424] border border-slate-800/90 shadow-xl transition-all duration-200 flex flex-col items-center justify-between min-h-[280px]"
     >
       {/* Top Status Header */}
       <div className="w-full flex items-center justify-between z-10">
-        <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-          <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
+          <span className="w-2 h-2 rounded-full bg-sky-400" />
           <span>Stockfish 19 Engine</span>
         </div>
 
         {/* Piece Selector Switcher */}
-        <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-lg border border-slate-800">
+        <div className="flex items-center gap-1 bg-slate-950/80 p-0.5 rounded-lg border border-slate-800">
           {(['king', 'queen', 'knight'] as CenterpiecePieceType[]).map((p) => (
             <button
               key={p}
               onClick={() => setSelectedPiece(p)}
               className={`w-7 h-7 rounded text-sm flex items-center justify-center transition-colors cursor-pointer ${
                 selectedPiece === p
-                  ? 'bg-slate-800 text-sky-400 font-bold border border-slate-700'
+                  ? 'bg-slate-800 text-sky-400 font-semibold border border-slate-700/80'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
               title={`Switch piece to ${p}`}
@@ -105,25 +105,24 @@ export const GlowingChessCenterpiece: React.FC<GlowingChessCenterpieceProps> = (
         <div
           className="relative flex items-center justify-center transition-transform duration-200 ease-out will-change-transform"
           style={{
-            transform: `perspective(1000px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) scale(${isHovered ? 1.04 : 1})`,
+            transform: `perspective(1000px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) scale(${isHovered ? 1.02 : 1})`,
           }}
         >
           {/* Subtle Floor Pedestal */}
           <div
-            className="absolute -bottom-4 w-28 h-5 rounded-full blur-md transition-all duration-300 pointer-events-none"
+            className="absolute -bottom-4 w-28 h-4 rounded-full blur-sm transition-all duration-300 pointer-events-none"
             style={{
-              background: `radial-gradient(ellipse, ${activePalette.glow} 0%, rgba(0,0,0,0.85) 60%, transparent 80%)`,
-              transform: `scale(${isHovered ? 1.15 : 1}) translateY(${tilt.x * 0.4}px)`,
+              background: `radial-gradient(ellipse, ${activePalette.glow} 0%, rgba(0,0,0,0.6) 60%, transparent 80%)`,
             }}
           />
 
           {/* SVG Chess Piece */}
-          <div className="relative w-32 h-44 sm:w-36 sm:h-48 flex items-center justify-center animate-float">
+          <div className="relative w-32 h-44 sm:w-36 sm:h-48 flex items-center justify-center">
             <svg
               viewBox="0 0 200 240"
-              className="w-full h-full drop-shadow-xl overflow-visible"
+              className="w-full h-full drop-shadow-md overflow-visible"
               style={{
-                filter: `drop-shadow(0 10px 18px rgba(0,0,0,0.8)) drop-shadow(0 0 12px ${activePalette.glow})`,
+                filter: 'drop-shadow(0 8px 14px rgba(0,0,0,0.6))',
               }}
             >
               <defs>

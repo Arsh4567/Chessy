@@ -136,6 +136,74 @@ Highlight key positional or tactical ideas (piece activity, central control, Kin
   }
 });
 
+// API endpoint to generate human-readable, beginner-tailored move explanations in the Analysis view
+app.post('/api/analysis/explain-move', async (req, res) => {
+  try {
+    const {
+      moveSan,
+      color,
+      classification,
+      evalBefore,
+      evalAfter,
+      bestMoveSan,
+      openingName,
+      fen,
+      moveNumber,
+    } = req.body;
+
+    if (!moveSan) {
+      return res.status(400).json({ error: 'moveSan is required' });
+    }
+
+    const sidePlayed = color === 'w' ? 'White' : 'Black';
+    const qual = classification ? classification.toLowerCase() : 'analyzed';
+
+    const prompt = `You are an encouraging, world-class Chess Coach explaining a game to an absolute beginner player (Elo 400 - 900).
+Explain in simple, human-readable terms why the move "${moveSan}" played by ${sidePlayed} on move ${moveNumber || 1} is considered a ${qual.toUpperCase()}.
+
+Context:
+- Move: ${moveSan} (played by ${sidePlayed})
+- Engine Quality Assessment: ${qual}
+- Evaluation shift: from ${evalBefore !== undefined ? evalBefore : 'even'} to ${evalAfter !== undefined ? evalAfter : 'even'}
+${bestMoveSan ? `- Stockfish Recommended Move: ${bestMoveSan}` : ''}
+${openingName ? `- Opening Name: ${openingName}` : ''}
+- Current Board FEN: ${fen || 'N/A'}
+
+Rules for the explanation:
+1. Speak in warm, conversational, jargon-free English. Avoid cryptic engine notation or deep 10-move variations.
+2. Focus on clear beginner principles:
+   - Piece safety (is a piece hanging, unprotected, or captured?)
+   - King safety & castling
+   - Central board control (e4/d4/e5/d5 squares)
+   - Piece activity & development (getting knights and bishops off back rank)
+   - Tactical threats (forks, pins, checks, attacks)
+3. If the move was a blunder, mistake, or inaccuracy:
+   - Clearly state what went wrong (e.g. "This move leaves your bishop undefended on c4, allowing Black to win it for free.")
+   - Explain why the recommended move ${bestMoveSan || 'another option'} would have been safer or stronger.
+4. If the move was brilliant, great, best, or good:
+   - Explain why it is strong (e.g. "Great move! This develops your knight to an active square while defending the center pawn.")
+5. Keep the total response between 2 to 4 sentences (under 75 words).
+6. End with a 1-sentence "💡 Beginner Tip:".`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: prompt,
+    });
+
+    const explanation =
+      response.text?.trim() ||
+      `Playing ${moveSan} by ${sidePlayed} impacts board balance. Pay close attention to piece safety, defending unprotected squares, and developing your pieces toward the center.`;
+
+    return res.json({ explanation });
+  } catch (error: any) {
+    console.error('Error generating beginner analysis explanation:', error);
+    return res.status(500).json({
+      error: 'Failed to generate explanation',
+      explanation: `The move ${req.body.moveSan || 'played'} alters the position's dynamic balance. In beginner play, always ask: "Is my piece safe where I moved it?" and "What is my opponent attacking next?"`,
+    });
+  }
+});
+
 async function startServer() {
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static('dist'));

@@ -43,16 +43,16 @@ export const GamesView: React.FC<GamesViewProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 animate-in fade-in duration-300">
       {/* Top Header & Search Bar */}
-      <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="p-6 sm:p-8 rounded-2xl bg-[#0c1424] border border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-sky-400">
+          <div className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-sky-400">
             <Globe className="w-4 h-4" />
             <span>Chess.com Public Cloud Sync</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black font-display text-white">
+          <h1 className="text-2xl sm:text-3xl font-bold font-display text-white">
             Games & Performance Reports
           </h1>
-          <p className="text-xs sm:text-sm text-slate-400 max-w-xl">
+          <p className="text-xs sm:text-sm text-slate-400 max-w-xl leading-relaxed">
             Import recent games from any public Chess.com account to review with Stockfish 19 or generate a personalized grandmaster training report.
           </p>
         </div>
@@ -66,13 +66,13 @@ export const GamesView: React.FC<GamesViewProps> = ({
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="e.g. magnuscarlsen, hikaru"
-              className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-400 font-mono"
+              className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-400 font-mono transition-colors"
             />
           </div>
           <button
             type="submit"
             disabled={isLoading || !searchInput.trim()}
-            className="px-5 py-2.5 bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5 shrink-0"
+            className="px-4 py-2 bg-sky-500 hover:bg-sky-400 disabled:opacity-50 text-slate-950 text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0"
           >
             {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
             <span>Fetch</span>
@@ -84,9 +84,9 @@ export const GamesView: React.FC<GamesViewProps> = ({
       <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
         <button
           onClick={() => setActiveTab('explorer')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
             activeTab === 'explorer'
-              ? 'bg-sky-500 text-slate-950 shadow-md'
+              ? 'bg-slate-800 text-sky-400 border border-slate-700/80 shadow-sm'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
           }`}
         >
@@ -96,9 +96,9 @@ export const GamesView: React.FC<GamesViewProps> = ({
 
         <button
           onClick={() => setActiveTab('report')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
             activeTab === 'report'
-              ? 'bg-sky-500 text-slate-950 shadow-md'
+              ? 'bg-slate-800 text-sky-400 border border-slate-700/80 shadow-sm'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
           }`}
         >

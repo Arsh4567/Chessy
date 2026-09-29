@@ -115,20 +115,20 @@ export const ImportLichessModal: React.FC<ImportLichessModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
       <div 
-        className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+        className="bg-[#0c1424] border border-slate-800 rounded-3xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
         role="dialog"
         aria-label="Import Lichess Puzzles"
       >
         {/* Modal Header */}
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400">
+            <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-400">
               <Download className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-black font-display text-white">
+              <h2 className="text-lg font-bold font-display text-white">
                 Import Puzzles from Lichess
               </h2>
               <p className="text-xs text-slate-400">
@@ -147,7 +147,7 @@ export const ImportLichessModal: React.FC<ImportLichessModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-2 px-5 pt-4 border-b border-slate-800/80 bg-slate-950/30">
+        <div className="flex items-center gap-2 px-5 pt-3 border-b border-slate-800/80 bg-slate-950/60">
           {[
             { id: 'id' as ImportTab, label: 'By ID / URL', icon: Search },
             { id: 'user' as ImportTab, label: 'By Lichess Player', icon: User },
@@ -162,10 +162,10 @@ export const ImportLichessModal: React.FC<ImportLichessModalProps> = ({
                   setActiveTab(tab.id);
                   setErrorMsg(null);
                 }}
-                className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors cursor-pointer -mb-px ${
+                className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-t-xl transition-colors cursor-pointer ${
                   isActive
-                    ? 'border-amber-400 text-amber-400 bg-amber-500/5'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                    ? 'border-b-2 border-sky-400 text-sky-400 bg-sky-500/10 font-bold'
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5" />

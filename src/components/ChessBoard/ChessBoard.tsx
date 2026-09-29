@@ -657,7 +657,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = React.memo(({
   return (
     <div 
       onContextMenu={handleContextMenu}
-      className={`relative w-full max-w-[min(94vw,470px,68vh)] aspect-square select-none board-theme-${boardTheme} rounded-2xl shadow-xl p-1.5 sm:p-2 bg-slate-900 border border-slate-800 transition-all duration-300 touch-manipulation`}
+      className={`relative w-full max-w-[min(94vw,560px,76vh)] aspect-square select-none board-theme-${boardTheme} rounded-2xl shadow-2xl p-1.5 sm:p-2 bg-[#0c1424] border border-slate-800 transition-all duration-200 touch-manipulation`}
       role="region"
       aria-label="Interactive Chess Board"
     >

@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react';
 import confetti from 'canvas-confetti';
-import { Trophy, Swords, RotateCcw, BarChart3, Plus, Share2 } from 'lucide-react';
+import { Trophy, Swords, RotateCcw, BarChart3, Plus } from 'lucide-react';
 import { sound } from '../../utils/sound';
+import { ChessyModal } from '../common/ChessyModal';
+import { ChessyButton } from '../common/ChessyButton';
 
 interface GameOverModalProps {
   isOpen: boolean;
@@ -54,44 +56,62 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     result === 'win' ? 'text-emerald-400' : result === 'loss' ? 'text-rose-400' : 'text-amber-400';
 
   return (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 duration-200">
-        {/* Header Icon */}
-        <div className="flex justify-center mb-3">
-          <div
-            className={`w-16 h-16 rounded-2xl flex items-center justify-center border shadow-xl ${
-              result === 'win'
-                ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-400'
-                : result === 'loss'
-                ? 'bg-rose-950/80 border-rose-500/40 text-rose-400'
-                : 'bg-amber-950/80 border-amber-500/40 text-amber-400'
-            }`}
+    <ChessyModal
+      isOpen={isOpen}
+      onClose={onNewGame}
+      title={resultTitle}
+      subtitle={reason}
+      maxWidth="md"
+      icon={
+        result === 'win' ? (
+          <Trophy className="w-5 h-5 text-emerald-400" />
+        ) : result === 'loss' ? (
+          <Swords className="w-5 h-5 text-rose-400" />
+        ) : (
+          <span className="text-sm font-bold font-mono text-amber-400">½-½</span>
+        )
+      }
+      footer={
+        <div className="w-full space-y-2.5">
+          <ChessyButton
+            variant="primary"
+            size="md"
+            onClick={onAnalyze}
+            className="w-full"
+            leftIcon={<BarChart3 className="w-4 h-4" />}
           >
-            {result === 'win' ? (
-              <Trophy className="w-8 h-8" />
-            ) : result === 'loss' ? (
-              <Swords className="w-8 h-8" />
-            ) : (
-              <span className="text-2xl font-bold font-mono">½-½</span>
-            )}
+            Review Game Analysis
+          </ChessyButton>
+
+          <div className="grid grid-cols-2 gap-2">
+            <ChessyButton
+              variant="secondary"
+              size="sm"
+              onClick={onRematch}
+              leftIcon={<RotateCcw className="w-3.5 h-3.5" />}
+            >
+              Rematch
+            </ChessyButton>
+            <ChessyButton
+              variant="secondary"
+              size="sm"
+              onClick={onNewGame}
+              leftIcon={<Plus className="w-3.5 h-3.5" />}
+            >
+              New Game
+            </ChessyButton>
           </div>
         </div>
-
-        {/* Title & Reason */}
-        <div className="text-center mb-5">
-          <h2 className={`text-2xl font-extrabold font-display tracking-tight ${titleColor}`}>
-            {resultTitle}
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            {reason}
-          </p>
-
-          {/* Rating Delta */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-950 rounded-full border border-slate-800 mt-3">
-            <span className="text-xs text-slate-400">Rating</span>
-            <span className="text-xs font-mono font-bold text-slate-200">{newElo}</span>
+      }
+    >
+      <div className="space-y-4">
+        {/* Rating Delta Card */}
+        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between">
+          <span className="text-xs text-slate-400 font-medium">Rating Update</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-bold text-slate-100 tabular-nums">{newElo} Elo</span>
             <span
-              className={`text-xs font-mono font-bold ${
+              className={`text-xs font-mono font-bold tabular-nums ${
                 eloChange > 0 ? 'text-emerald-400' : eloChange < 0 ? 'text-rose-400' : 'text-slate-400'
               }`}
             >
@@ -101,53 +121,25 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         </div>
 
         {/* Quick Accuracy Comparison */}
-        <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3 mb-5 space-y-2">
+        <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3.5 space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>Opening</span>
             <span className="font-medium text-slate-200 truncate max-w-[200px]">
-              {openingName || 'Custom Line'}
+              {openingName || 'Custom Opening Line'}
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
+          <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-slate-800/80">
             <div className="text-center">
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider block">White</span>
-              <span className="text-base font-mono font-bold text-slate-100">{whiteAccuracy}%</span>
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">White</span>
+              <span className="text-sm font-mono font-bold text-slate-100 tabular-nums">{whiteAccuracy}%</span>
             </div>
             <div className="text-center border-l border-slate-800">
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Black</span>
-              <span className="text-base font-mono font-bold text-slate-100">{blackAccuracy}%</span>
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Black</span>
+              <span className="text-sm font-mono font-bold text-slate-100 tabular-nums">{blackAccuracy}%</span>
             </div>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="space-y-2">
-          <button
-            onClick={onAnalyze}
-            className="w-full py-2.5 px-4 bg-linear-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-sky-950/50 flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Analysis</span>
-          </button>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={onRematch}
-              className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs rounded-xl border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Rematch</span>
-            </button>
-            <button
-              onClick={onNewGame}
-              className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs rounded-xl border border-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Play</span>
-            </button>
           </div>
         </div>
       </div>
-    </div>
+    </ChessyModal>
   );
 };

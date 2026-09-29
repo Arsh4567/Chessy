@@ -242,8 +242,8 @@ export const MultiplayerMatch: React.FC<MultiplayerMatchProps> = ({
           {/* Top Player (Opponent) Card */}
           <div className={`w-full max-w-[460px] p-3 rounded-2xl border transition-all flex items-center justify-between ${
             isTopPlayerTurn && roomState.isGameActive
-              ? 'bg-slate-850 border-sky-500/50 shadow-md ring-1 ring-sky-500/30'
-              : 'bg-slate-900/80 border-slate-800'
+              ? 'bg-slate-800 border-sky-400/80 shadow-sm ring-1 ring-sky-500/20'
+              : 'bg-[#0c1424] border-slate-800'
           }`}>
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-lg shrink-0">
@@ -277,8 +277,8 @@ export const MultiplayerMatch: React.FC<MultiplayerMatchProps> = ({
                 topTimeMs < 30000
                   ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
                   : isTopPlayerTurn
-                  ? 'bg-sky-500 text-slate-950'
-                  : 'bg-slate-950 text-slate-300 border border-slate-800'
+                  ? 'bg-sky-500 text-slate-950 font-bold'
+                  : 'bg-slate-900 text-slate-300 border border-slate-800'
               }`}>
                 {formatClockTime(topTimeMs)}
               </div>
@@ -286,7 +286,7 @@ export const MultiplayerMatch: React.FC<MultiplayerMatchProps> = ({
           </div>
 
           {/* Chess Board */}
-          <div className="w-full max-w-[min(94vw,470px,68vh)] aspect-square rounded-3xl overflow-hidden p-2 bg-slate-900/90 border border-slate-800 shadow-2xl flex items-center justify-center">
+          <div className="w-full max-w-[min(94vw,470px,68vh)] aspect-square rounded-2xl overflow-hidden p-2 sm:p-2.5 bg-[#0c1424] border border-slate-800 shadow-sm flex items-center justify-center">
             <ChessBoard
               chess={chess}
               isFlipped={isFlipped}
@@ -303,8 +303,8 @@ export const MultiplayerMatch: React.FC<MultiplayerMatchProps> = ({
           {/* Bottom Player (You) Card */}
           <div className={`w-full max-w-[460px] p-3 rounded-2xl border transition-all flex items-center justify-between ${
             isBottomPlayerTurn && roomState.isGameActive
-              ? 'bg-slate-850 border-sky-500/50 shadow-md ring-1 ring-sky-500/30'
-              : 'bg-slate-900/80 border-slate-800'
+              ? 'bg-slate-800 border-sky-400/80 shadow-sm ring-1 ring-sky-500/20'
+              : 'bg-[#0c1424] border-slate-800'
           }`}>
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-lg shrink-0">
@@ -336,8 +336,8 @@ export const MultiplayerMatch: React.FC<MultiplayerMatchProps> = ({
                 bottomTimeMs < 30000
                   ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
                   : isBottomPlayerTurn
-                  ? 'bg-sky-500 text-slate-950'
-                  : 'bg-slate-950 text-slate-300 border border-slate-800'
+                  ? 'bg-sky-500 text-slate-950 font-bold'
+                  : 'bg-slate-900 text-slate-300 border border-slate-800'
               }`}>
                 {formatClockTime(bottomTimeMs)}
               </div>

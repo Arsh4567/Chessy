@@ -562,7 +562,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start">
         {/* Left Column: Board & Engine Status HUD */}
         <div className="lg:col-span-7 xl:col-span-8 flex flex-col items-center gap-3">
-          <div className="flex items-stretch gap-2 sm:gap-3 w-full max-w-[480px] justify-center">
+          <div className="flex items-stretch gap-2 sm:gap-3 w-full max-w-[540px] justify-center">
             <div className="shrink-0 flex items-stretch">
               <EvalBar
                 evalScore={stockfishEval.evalPawns ?? (stockfishEval.scoreCp / 100)}
@@ -591,36 +591,41 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
           </div>
 
           {/* Current Move Inspector & Quality Card */}
-          <MoveInspector
-            currentMove={currentMove}
-            currentMoveIdx={currentMoveIdx}
-            totalMoves={analyzedData?.analyzedMoves.length || 0}
-            isProgressivelyAnalyzing={isProgressivelyAnalyzing}
-            activeBestMoveSan={livePvSan[0]}
-            isVariationActive={isVariationActive}
-            onPrevMove={() => jumpToMove(Math.max(0, currentMoveIdx - 1))}
-            onNextMove={() => jumpToMove(Math.min((analyzedData?.analyzedMoves.length || 1) - 1, currentMoveIdx + 1))}
-            onPlayBestMove={handlePlayBestMove}
-            onReturnToMainline={handleReturnToMainline}
-          />
+          <div className="w-full max-w-[540px]">
+            <MoveInspector
+              currentMove={currentMove}
+              currentMoveIdx={currentMoveIdx}
+              totalMoves={analyzedData?.analyzedMoves.length || 0}
+              isProgressivelyAnalyzing={isProgressivelyAnalyzing}
+              currentFen={chess.fen()}
+              activeBestMoveSan={livePvSan[0]}
+              isVariationActive={isVariationActive}
+              onPrevMove={() => jumpToMove(Math.max(0, currentMoveIdx - 1))}
+              onNextMove={() => jumpToMove(Math.min((analyzedData?.analyzedMoves.length || 1) - 1, currentMoveIdx + 1))}
+              onPlayBestMove={handlePlayBestMove}
+              onReturnToMainline={handleReturnToMainline}
+            />
+          </div>
 
           {/* Continuous Live Engine Evaluation HUD */}
-          <EngineStatusHud
-            stockfishEval={stockfishEval}
-            livePvSan={livePvSan}
-            displayEval={displayEval}
-          />
+          <div className="w-full max-w-[540px]">
+            <EngineStatusHud
+              stockfishEval={stockfishEval}
+              livePvSan={livePvSan}
+              displayEval={displayEval}
+            />
+          </div>
         </div>
 
         {/* Right Column: Move History, Opening Explorer & Game Report */}
-        <div className="lg:col-span-4 flex flex-col h-[580px] space-y-2">
+        <div className="lg:col-span-5 xl:col-span-4 flex flex-col h-[580px] space-y-2 w-full max-w-[540px] lg:max-w-none mx-auto">
           {/* Tab Switcher */}
-          <div className="grid grid-cols-3 p-1 bg-slate-900 border border-slate-800 rounded-2xl">
+          <div className="grid grid-cols-3 p-1 bg-[#0c1424] border border-slate-800 rounded-xl">
             <button
               onClick={() => setRightPanelTab('moves')}
-              className={`flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                 rightPanelTab === 'moves'
-                  ? 'bg-sky-500 text-slate-950 shadow-md font-bold'
+                  ? 'bg-slate-800 text-sky-400 shadow-sm border border-slate-700/80 font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -629,9 +634,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             </button>
             <button
               onClick={() => setRightPanelTab('explorer')}
-              className={`flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                 rightPanelTab === 'explorer'
-                  ? 'bg-sky-500 text-slate-950 shadow-md font-bold'
+                  ? 'bg-slate-800 text-sky-400 shadow-sm border border-slate-700/80 font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -640,9 +645,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             </button>
             <button
               onClick={() => setRightPanelTab('report')}
-              className={`flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                 rightPanelTab === 'report'
-                  ? 'bg-sky-500 text-slate-950 shadow-md font-bold'
+                  ? 'bg-slate-800 text-sky-400 shadow-sm border border-slate-700/80 font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
