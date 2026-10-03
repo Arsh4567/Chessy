@@ -33,7 +33,7 @@ export function ChessyTabs<T extends string = string>({
             <button
               key={tab.id}
               onClick={() => onChange(tab.id)}
-              className={`pb-2.5 font-semibold transition-colors relative flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+              className={`pb-2.5 font-semibold transition-colors relative flex items-center gap-2 cursor-pointer whitespace-nowrap focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
                 size === 'sm' ? 'text-xs' : 'text-xs sm:text-sm'
               } ${isActive ? 'text-sky-400 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
             >
@@ -59,7 +59,7 @@ export function ChessyTabs<T extends string = string>({
           <button
             key={tab.id}
             onClick={() => onChange(tab.id)}
-            className={`font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
               size === 'sm' ? 'text-xs px-2.5 py-1' : 'text-xs sm:text-sm px-3.5 py-1.5'
             } ${
               isActive
