@@ -464,6 +464,7 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = ({
                   onClick={() => setIsFlipped((prev) => !prev)}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
                   title="Flip board perspective"
+                  aria-label="Flip board perspective"
                 >
                   <ArrowUpDown className="w-4 h-4" />
                 </button>
@@ -472,6 +473,7 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = ({
                   disabled={moveHistory.length === 0}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   title="Undo last move"
+                  aria-label="Undo last move"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -796,6 +798,7 @@ export const OpeningExplorer: React.FC<OpeningExplorerProps> = ({
                             onClick={(e) => handleExplainMove(move, e)}
                             className="p-1.5 rounded-lg bg-slate-800 hover:bg-sky-500/20 text-slate-400 hover:text-sky-300 transition-colors shrink-0"
                             title="Why is this move played? Ask Grandmaster Coach"
+                            aria-label="Explain this move"
                           >
                             <Info className="w-3.5 h-3.5" />
                           </button>
