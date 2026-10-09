@@ -493,6 +493,7 @@ export const PuzzleTrainer: React.FC<PuzzleTrainerProps> = ({
           <button
             onClick={() => setImportNotification(null)}
             className="text-emerald-400 hover:text-emerald-200 p-1 cursor-pointer"
+            aria-label="Dismiss notification"
           >
             ✕
           </button>

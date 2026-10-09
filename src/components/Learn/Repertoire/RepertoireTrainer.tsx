@@ -490,6 +490,7 @@ export const RepertoireTrainer: React.FC<RepertoireTrainerProps> = ({
                 onClick={() => setViewState('dashboard')}
                 className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
                 title="Back to Dashboard"
+                aria-label="Back to Dashboard"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
@@ -649,6 +650,8 @@ export const RepertoireTrainer: React.FC<RepertoireTrainerProps> = ({
               <button
                 onClick={() => setViewState('dashboard')}
                 className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+                title="Back to Dashboard"
+                aria-label="Back to Dashboard"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
